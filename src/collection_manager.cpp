@@ -14,6 +14,7 @@
 #include "core_api_utils.h"
 #include "synonym_index_manager.h"
 #include "curation_index_manager.h"
+#include "fast_json_parse.h"
 
 constexpr const size_t CollectionManager::DEFAULT_NUM_MEMORY_SHARDS;
 
@@ -2108,15 +2109,23 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
 
     auto begin = std::chrono::high_resolution_clock::now();
 
+    simdjson::ondemand::parser simdjson_parser;
+    const bool use_simdjson = Config::get_instance().get_enable_simdjson_restore();
+
     while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
         num_found_docs++;
         const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
 
         nlohmann::json document;
-        const std::string& doc_string = iter->value().ToString();
+        const std::string doc_string = iter->value().ToString();
 
         try {
-            document = nlohmann::json::parse(doc_string);
+            if(use_simdjson) {
+                simdjson::padded_string padded(doc_string);
+                document = FastJsonParser::parse(simdjson_parser, padded);
+            } else {
+                document = nlohmann::json::parse(doc_string);
+            }
         } catch(const std::exception& e) {
             LOG(ERROR) << "JSON error: " << e.what();
             return Option<bool>(400, "Bad JSON.");
@@ -2300,14 +2309,22 @@ Option<Collection*> CollectionManager::clone_collection(const string& existing_n
 
         auto begin = std::chrono::high_resolution_clock::now();
 
+        simdjson::ondemand::parser simdjson_copy_parser;
+        const bool use_simdjson_copy = Config::get_instance().get_enable_simdjson_restore();
+
         while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
             num_found_docs++;
 
             nlohmann::json document;
-            const std::string& doc_string = iter->value().ToString();
+            const std::string doc_string = iter->value().ToString();
 
             try {
-                document = nlohmann::json::parse(doc_string);
+                if(use_simdjson_copy) {
+                    simdjson::padded_string padded(doc_string);
+                    document = FastJsonParser::parse(simdjson_copy_parser, padded);
+                } else {
+                    document = nlohmann::json::parse(doc_string);
+                }
             } catch(const std::exception& e) {
                 LOG(ERROR) << "JSON error during document copy: " << e.what();
                 iter->Next();

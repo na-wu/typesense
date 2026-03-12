@@ -90,6 +90,9 @@ message("OpenSSL library: ${OPENSSL_LIBRARIES}")
 FILE(GLOB SRC_FILES src/*.cpp ${DEP_ROOT_DIR}/${KAKASI_NAME}/data/*.cpp)
 FILE(GLOB TEST_FILES test/*.cpp)
 
+# Exclude simdjson.cpp from SRC_FILES — it is compiled as a separate static library
+list(FILTER SRC_FILES EXCLUDE REGEX ".*simdjson\\.cpp$")
+
 include_directories(include)
 include_directories(include/tsl)
 include_directories(/usr/local/include)
@@ -138,6 +141,9 @@ link_directories(${DEP_ROOT_DIR}/${ONNX_NAME}-build/lib/_deps/pytorch_cpuinfo-bu
 
 set(JEMALLOC_ROOT_DIR "${DEP_ROOT_DIR}/${JEMALLOC_NAME}")
 FIND_PACKAGE(Jemalloc REQUIRED)
+
+add_library(simdjson STATIC src/simdjson.cpp)
+target_include_directories(simdjson PUBLIC include)
 
 add_executable(typesense-server ${SRC_FILES} src/main/typesense_server.cpp)
 add_executable(search ${SRC_FILES} src/main/main.cpp)
@@ -228,7 +234,7 @@ else()
 endif()
 
 set(ICU_ALL_LIBRARIES ${ICU_I18N_LIBRARIES} ${ICU_LIBRARIES} ${ICU_DATA_LIBRARIES})
-set(CORE_LIBS kakasi h2o-evloop braft brpc iconv ${ICU_ALL_LIBRARIES} ${CURL_LIBRARIES} for s2
+set(CORE_LIBS simdjson kakasi h2o-evloop braft brpc iconv ${ICU_ALL_LIBRARIES} ${CURL_LIBRARIES} for s2
               ${LevelDB_LIBRARIES} ${ROCKSDB_LIBS}
               glog ${GFLAGS_LIBRARIES} ${PROTOBUF_LIBRARIES} ${STACKTRACE_LIBS}
               ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${JEMALLOC_LIBRARIES}

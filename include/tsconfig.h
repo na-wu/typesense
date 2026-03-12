@@ -110,6 +110,8 @@ private:
 
     uint32_t shutdown_delay_seconds;
 
+    bool enable_simdjson_restore;
+
 protected:
 
     Config() {
@@ -165,6 +167,8 @@ protected:
         this->proxy_rate_limit = 1000;
 
         this->proxy_allow_only_peer_src_ips = false;
+
+        this->enable_simdjson_restore = true;
     }
 
     Config(Config const&) {
@@ -556,6 +560,14 @@ public:
 
     bool get_proxy_allow_only_peer_src_ips() {
         return proxy_allow_only_peer_src_ips;
+    }
+
+    bool get_enable_simdjson_restore() const {
+        return enable_simdjson_restore;
+    }
+
+    void set_enable_simdjson_restore(bool val) {
+        this->enable_simdjson_restore = val;
     }
 
     // loaders
