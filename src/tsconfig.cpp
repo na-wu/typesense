@@ -312,6 +312,26 @@ void Config::load_config_env() {
         this->db_keep_log_file_num = std::stoi(get_env("TYPESENSE_DB_KEEP_LOG_FILE_NUM"));
     }
 
+    if(!get_env("TYPESENSE_DB_BLOCK_CACHE_SIZE").empty()) {
+        this->db_block_cache_size = std::stoull(get_env("TYPESENSE_DB_BLOCK_CACHE_SIZE"));
+    }
+
+    if(!get_env("TYPESENSE_DB_BLOOM_FILTER_BITS").empty()) {
+        this->db_bloom_filter_bits = std::stoi(get_env("TYPESENSE_DB_BLOOM_FILTER_BITS"));
+    }
+
+    if(!get_env("TYPESENSE_DB_BLOCK_SIZE").empty()) {
+        this->db_block_size = std::stoi(get_env("TYPESENSE_DB_BLOCK_SIZE"));
+    }
+
+    if(!get_env("TYPESENSE_DB_COMPRESSION_TYPE").empty()) {
+        this->db_compression_type = get_env("TYPESENSE_DB_COMPRESSION_TYPE");
+    }
+
+    if(!get_env("TYPESENSE_DB_ZSTD_COMPRESSION_LEVEL").empty()) {
+        this->db_zstd_compression_level = std::stoi(get_env("TYPESENSE_DB_ZSTD_COMPRESSION_LEVEL"));
+    }
+
     if(!get_env("TYPESENSE_MAX_INDEXING_CONCURRENCY").empty()) {
         this->max_indexing_concurrency = std::stoi(get_env("TYPESENSE_MAX_INDEXING_CONCURRENCY"));
     }
@@ -571,6 +591,26 @@ void Config::load_config_file(cmdline::parser& options) {
         this->db_keep_log_file_num = (size_t) reader.GetInteger("server", "db-keep-log-file-num", 5);
     }
 
+    if(reader.Exists("server", "db-block-cache-size")) {
+        this->db_block_cache_size = (uint64_t) reader.GetInteger("server", "db-block-cache-size", 256*1048576);
+    }
+
+    if(reader.Exists("server", "db-bloom-filter-bits")) {
+        this->db_bloom_filter_bits = (uint32_t) reader.GetInteger("server", "db-bloom-filter-bits", 10);
+    }
+
+    if(reader.Exists("server", "db-block-size")) {
+        this->db_block_size = (uint32_t) reader.GetInteger("server", "db-block-size", 4096);
+    }
+
+    if(reader.Exists("server", "db-compression-type")) {
+        this->db_compression_type = reader.Get("server", "db-compression-type", "snappy");
+    }
+
+    if(reader.Exists("server", "db-zstd-compression-level")) {
+        this->db_zstd_compression_level = (uint32_t) reader.GetInteger("server", "db-zstd-compression-level", 3);
+    }
+
     if(reader.Exists("server", "max-indexing-concurrency")) {
         this->max_indexing_concurrency = reader.GetInteger("server", "max-indexing-concurrency", 4);
     }
@@ -802,6 +842,26 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("db-keep-log-file-num")) {
         this->db_keep_log_file_num = options.get<uint32_t>("db-keep-log-file-num");
+    }
+
+    if(options.exist("db-block-cache-size")) {
+        this->db_block_cache_size = options.get<uint64_t>("db-block-cache-size");
+    }
+
+    if(options.exist("db-bloom-filter-bits")) {
+        this->db_bloom_filter_bits = options.get<uint32_t>("db-bloom-filter-bits");
+    }
+
+    if(options.exist("db-block-size")) {
+        this->db_block_size = options.get<uint32_t>("db-block-size");
+    }
+
+    if(options.exist("db-compression-type")) {
+        this->db_compression_type = options.get<std::string>("db-compression-type");
+    }
+
+    if(options.exist("db-zstd-compression-level")) {
+        this->db_zstd_compression_level = options.get<uint32_t>("db-zstd-compression-level");
     }
 
     if(options.exist("max-indexing-concurrency")) {

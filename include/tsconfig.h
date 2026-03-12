@@ -98,6 +98,16 @@ private:
 
     uint32_t db_keep_log_file_num;
 
+    uint64_t db_block_cache_size;
+
+    uint32_t db_bloom_filter_bits;
+
+    uint32_t db_block_size;
+
+    std::string db_compression_type;
+
+    uint32_t db_zstd_compression_level;
+
     uint32_t max_indexing_concurrency;
 
     uint32_t proxy_rate_limit;
@@ -159,6 +169,12 @@ protected:
         this->db_max_log_file_size = 4*1048576;
 
         this->db_keep_log_file_num = 5;
+
+        this->db_block_cache_size = 256 * 1048576;  // 256 MB
+        this->db_bloom_filter_bits = 10;             // 10-bit bloom filters (~1% false positive)
+        this->db_block_size = 4096;                  // 4 KB (RocksDB default, tunable)
+        this->db_compression_type = "snappy";        // safe default, existing behavior
+        this->db_zstd_compression_level = 3;         // zstd level 3 = good balance
 
         this->max_indexing_concurrency = 4;
 
@@ -226,6 +242,26 @@ public:
 
     void set_db_keep_log_file_num(uint32_t val) {
         this->db_keep_log_file_num = val;
+    }
+
+    void set_db_block_cache_size(uint64_t val) {
+        this->db_block_cache_size = val;
+    }
+
+    void set_db_bloom_filter_bits(uint32_t val) {
+        this->db_bloom_filter_bits = val;
+    }
+
+    void set_db_block_size(uint32_t val) {
+        this->db_block_size = val;
+    }
+
+    void set_db_compression_type(const std::string& val) {
+        this->db_compression_type = val;
+    }
+
+    void set_db_zstd_compression_level(uint32_t val) {
+        this->db_zstd_compression_level = val;
     }
 
     void set_max_indexing_concurrency(uint32_t val) {
@@ -535,6 +571,26 @@ public:
 
     uint32_t get_db_keep_log_file_num() const {
         return this->db_keep_log_file_num;
+    }
+
+    uint64_t get_db_block_cache_size() const {
+        return this->db_block_cache_size;
+    }
+
+    uint32_t get_db_bloom_filter_bits() const {
+        return this->db_bloom_filter_bits;
+    }
+
+    uint32_t get_db_block_size() const {
+        return this->db_block_size;
+    }
+
+    std::string get_db_compression_type() const {
+        return this->db_compression_type;
+    }
+
+    uint32_t get_db_zstd_compression_level() const {
+        return this->db_zstd_compression_level;
     }
 
     uint32_t get_max_indexing_concurrency() const {

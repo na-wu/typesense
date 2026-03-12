@@ -151,6 +151,21 @@ void init_cmdline_options(cmdline::parser & options, int argc, char **argv) {
     options.add<uint32_t>("db-max-write-buffer-number", '\0', "rocksdb max write buffer number.", false);
     options.add<uint32_t>("db-max-log-file-size", '\0', "rocksdb max logfile size.", false);
     options.add<uint32_t>("db-keep-log-file-num", '\0', "rocksdb number of log files to keep.", false);
+    options.add<uint64_t>("db-block-cache-size", '\0',
+        "RocksDB block cache size in bytes. Default: 268435456 (256 MB). Set to 0 to disable.",
+        false, 268435456);
+    options.add<uint32_t>("db-bloom-filter-bits", '\0',
+        "RocksDB bloom filter bits per key. Default: 10. Set to 0 to disable.",
+        false, 10);
+    options.add<uint32_t>("db-block-size", '\0',
+        "RocksDB data block size in bytes. Default: 4096.",
+        false, 4096);
+    options.add<std::string>("db-compression-type", '\0',
+        "RocksDB compression: snappy, zstd, none. Default: snappy.",
+        false, "snappy");
+    options.add<uint32_t>("db-zstd-compression-level", '\0',
+        "Zstd compression level (1-22). Higher = better ratio, slower writes. Default: 3.",
+        false, 3);
 
     // DEPRECATED
     options.add<std::string>("listen-address", 'h', "[DEPRECATED: use `api-address`] Address to which Typesense API service binds.", false, "0.0.0.0");
@@ -566,10 +581,20 @@ int run_server(const Config & config, const std::string & version, void (*master
 
     // primary DB used for storing the documents: we will not use WAL since Raft provides that
     Store store(db_dir, 24*60*60, 1024, true, 0, db_write_buffer_size, db_max_write_buffer_number,
-                db_max_log_file_size, db_keep_log_file_num);
+                db_max_log_file_size, db_keep_log_file_num,
+                config.get_db_block_cache_size(),
+                config.get_db_bloom_filter_bits(),
+                config.get_db_block_size(),
+                config.get_db_compression_type(),
+                config.get_db_zstd_compression_level());
 
     // meta DB for storing house keeping things
-    Store meta_store(meta_dir, 24*60*60, 1024, false);
+    Store meta_store(meta_dir, 24*60*60, 1024, false, 0,
+                     4*1048576, 2, 4*1048576, 5,
+                     16*1048576,  // 16 MB cache for meta
+                     10, 4096,
+                     config.get_db_compression_type(),
+                     config.get_db_zstd_compression_level());
 
     Store* analytics_store = nullptr;
     if(!analytics_dir.empty()) {
@@ -588,7 +613,12 @@ int run_server(const Config & config, const std::string & version, void (*master
             }
         }
 
-        analytics_store = new Store(analytics_db_dir, 24*60*60, 1024, true, analytics_db_ttl);
+        analytics_store = new Store(analytics_db_dir, 24*60*60, 1024, true, analytics_db_ttl,
+                                    4*1048576, 2, 4*1048576, 5,
+                                    16*1048576,  // 16 MB cache for analytics
+                                    10, 4096,
+                                    config.get_db_compression_type(),
+                                    config.get_db_zstd_compression_level());
     }
 
     AnalyticsManager::get_instance().init(&store, analytics_store, analytics_minute_rate_limit);

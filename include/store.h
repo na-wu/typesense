@@ -18,6 +18,9 @@
 #include <mutex>
 #include <rocksdb/utilities/checkpoint.h>
 #include <rocksdb/utilities/table_properties_collectors.h>
+#include <rocksdb/table.h>
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/cache.h>
 #include "string_utils.h"
 #include "logger.h"
 #include "file_utils.h"
@@ -58,6 +61,7 @@ private:
     rocksdb::DB *db;
     rocksdb::Options options;
     rocksdb::WriteOptions write_options;
+    std::shared_ptr<rocksdb::Cache> block_cache_;
 
     // Used to protect assignment to DB handle, which is otherwise thread safe
     // So we use unique lock only for assignment, but shared locks for all other operations on DB
@@ -77,7 +81,12 @@ public:
           size_t write_buffer_size = 4*1048576,
           size_t max_write_buffer_number = 2,
           size_t max_log_file_size = 4*1048576,
-          size_t keep_log_file_num = 5);
+          size_t keep_log_file_num = 5,
+          size_t block_cache_size = 256*1048576,
+          uint32_t bloom_filter_bits = 10,
+          uint32_t block_size = 4096,
+          const std::string& compression_type = "snappy",
+          uint32_t zstd_level = 3);
 
     ~Store();
 
@@ -125,6 +134,12 @@ public:
     const rocksdb::Options &get_db_options() const;
 
     void print_memory_usage();
+
+    std::string get_cache_stats() const {
+        if(!block_cache_) return "no block cache";
+        return "usage=" + std::to_string(block_cache_->GetUsage()) +
+               " capacity=" + std::to_string(block_cache_->GetCapacity());
+    }
 
     void get_last_N_values(const std::string& userid_prefix, uint32_t N, std::vector<std::string>& values);
 };

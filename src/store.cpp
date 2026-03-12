@@ -2,7 +2,8 @@
 
 Store::Store(const std::string & state_dir_path, const size_t wal_ttl_secs, const size_t wal_size_mb, bool disable_wal,
              int32_t ttl, size_t write_buffer_size,size_t max_write_buffer_number, size_t max_log_file_size,
-             size_t keep_log_file_num): state_dir_path(state_dir_path) {
+             size_t keep_log_file_num, size_t block_cache_size, uint32_t bloom_filter_bits, uint32_t block_size,
+             const std::string& compression_type, uint32_t zstd_level): state_dir_path(state_dir_path) {
     // Optimize RocksDB
     options.IncreaseParallelism();
     options.OptimizeLevelStyleCompaction();
@@ -11,7 +12,68 @@ Store::Store(const std::string & state_dir_path, const size_t wal_ttl_secs, cons
     options.write_buffer_size = write_buffer_size;
     options.max_write_buffer_number = max_write_buffer_number;
     options.merge_operator.reset(new UInt64AddOperator);
-    options.compression = rocksdb::CompressionType::kSnappyCompression;
+
+    // Compression configuration
+    if(compression_type == "zstd") {
+        options.compression = rocksdb::CompressionType::kZSTD;
+
+        rocksdb::CompressionOptions compression_opts;
+        compression_opts.level = zstd_level;
+        compression_opts.max_dict_bytes = 32768;            // 32 KB dictionary
+        compression_opts.zstd_max_train_bytes = 256 * 1024; // 256 KB training buffer
+
+        options.compression_opts = compression_opts;
+
+        // Use no compression for L0 (fastest writes), Zstd for L1+
+        options.compression_per_level = {
+            rocksdb::CompressionType::kNoCompression,   // L0
+            rocksdb::CompressionType::kZSTD,            // L1
+            rocksdb::CompressionType::kZSTD,            // L2
+            rocksdb::CompressionType::kZSTD,            // L3
+            rocksdb::CompressionType::kZSTD,            // L4
+            rocksdb::CompressionType::kZSTD,            // L5
+            rocksdb::CompressionType::kZSTD,            // L6
+        };
+
+        LOG(INFO) << "Using Zstd compression (level=" << zstd_level
+                  << ", max_dict_bytes=" << compression_opts.max_dict_bytes
+                  << ", zstd_max_train_bytes=" << compression_opts.zstd_max_train_bytes << ")";
+
+    } else if(compression_type == "none") {
+        options.compression = rocksdb::CompressionType::kNoCompression;
+        LOG(INFO) << "Compression disabled";
+    } else {
+        // Default: Snappy (existing behavior)
+        options.compression = rocksdb::CompressionType::kSnappyCompression;
+    }
+
+    // Block-based table options: cache, bloom filters, block size
+    rocksdb::BlockBasedTableOptions table_options;
+
+    if(block_cache_size > 0) {
+        block_cache_ = rocksdb::NewLRUCache(block_cache_size);
+        table_options.block_cache = block_cache_;
+    }
+
+    if(bloom_filter_bits > 0) {
+        table_options.filter_policy.reset(
+            rocksdb::NewBloomFilterPolicy(bloom_filter_bits, false));
+        // Use partitioned index filters for large datasets
+        table_options.index_type = rocksdb::BlockBasedTableOptions::kTwoLevelIndexSearch;
+        table_options.partition_filters = true;
+        table_options.metadata_block_size = 4096;
+        // Pin L0 filter and index blocks in cache (they're accessed most)
+        table_options.pin_l0_filter_and_index_blocks_in_cache = true;
+    }
+
+    if(block_size != 4096) {
+        table_options.block_size = block_size;
+    }
+
+    // Enable prefix-based bloom for iterators (helps scan performance)
+    table_options.whole_key_filtering = true;
+
+    options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
 
     options.max_log_file_size = max_log_file_size;
     options.keep_log_file_num = keep_log_file_num;
