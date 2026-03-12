@@ -6187,6 +6187,11 @@ uint32_t Collection::get_seq_id_from_key(const std::string & key) {
     return StringUtils::deserialize_uint32_t(serialized_seq_id);
 }
 
+std::string Collection::get_seq_id_key_suffix(uint32_t seq_id) {
+    // Match the existing key format from get_seq_id_key
+    return StringUtils::serialize_uint32_t(seq_id);
+}
+
 std::string Collection::get_next_seq_id_key(const std::string & collection_name) {
     return std::string(COLLECTION_NEXT_SEQ_PREFIX) + "_" + collection_name;
 }
