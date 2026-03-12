@@ -1,4 +1,5 @@
 #include "index.h"
+#include "pretokenized_doc.h"
 
 #include <memory>
 #include <numeric>
@@ -531,6 +532,30 @@ void Index::validate_and_preprocess(Index *index,
                 continue;
             }
 
+            if(index_rec.skip_preprocessing) {
+                // Already has pre-tokenized data from a previous indexing run — skip validate + tokenize
+                // Still need to compute points for sorting
+                int64_t points = 0;
+                if(index_rec.doc.count(default_sorting_field) == 0) {
+                    auto default_sorting_field_it = index->sort_index.find(default_sorting_field);
+                    if(default_sorting_field_it != index->sort_index.end()) {
+                        auto seq_id_it = default_sorting_field_it->second->find(index_rec.seq_id);
+                        if(seq_id_it != default_sorting_field_it->second->end()) {
+                            points = seq_id_it->second;
+                        } else {
+                            points = INT64_MIN;
+                        }
+                    } else {
+                        points = INT64_MIN;
+                    }
+                } else {
+                    points = get_points_from_doc(index_rec.doc, default_sorting_field);
+                }
+                index_rec.points = points;
+                index_rec.index_success();
+                continue;
+            }
+
             if(index_rec.operation == DELETE) {
                 continue;
             }
@@ -595,6 +620,22 @@ void Index::validate_and_preprocess(Index *index,
             }
 
             compute_token_offsets_facets(index_rec, search_schema, token_separators, symbols_to_index);
+
+            // After tokenization, serialize the tokenized fields for faster restore
+            if(Config::get_instance().get_enable_pretokenized_write()) {
+                PreTokenizedDoc ptdoc;
+                for(const auto& field_index_pair : index_rec.field_index) {
+                    TokenizedField tf;
+                    tf.field_name = field_index_pair.first;
+                    tf.field_type = 0;  // string tokens
+
+                    for(const auto& token_offset : field_index_pair.second.offsets) {
+                        tf.tokens.emplace_back(token_offset.first, token_offset.second);
+                    }
+                    ptdoc.fields.push_back(std::move(tf));
+                }
+                index_rec.pretokenized_blob = ptdoc.serialize();
+            }
 
             int64_t points = 0;
 
@@ -765,44 +806,116 @@ void Index::index_field_in_memory(const std::string& collection_name, const fiel
             const auto& document = record.doc;
             const auto seq_id = record.seq_id;
 
-            if(document.count(afield.name) == 0 || !record.indexed.ok()) {
-                continue;
+            bool used_pretokenized = false;
+
+            // Use pre-tokenized data directly when available (fast restore path)
+            if(record.skip_preprocessing && !record.pretokenized.fields.empty()) {
+                for(const auto& tf : record.pretokenized.fields) {
+                    if(tf.field_name != afield.name) continue;
+                    if(tf.field_type != 0) continue;  // only handle string tokens here
+
+                    if(record.points > max_score) {
+                        max_score = record.points;
+                    }
+
+                    for(const auto& tok_pair : tf.tokens) {
+                        token_to_doc_offsets[tok_pair.first].emplace_back(
+                            seq_id, record.points, tok_pair.second);
+
+                        if(afield.infix) {
+                            auto strhash = StringUtils::hash_wy(tok_pair.first.c_str(), tok_pair.first.size());
+                            const auto& infix_sets = infix_index.at(afield.name);
+                            infix_sets[strhash % 4]->insert(tok_pair.first);
+                        }
+                    }
+                    used_pretokenized = true;
+                }
+
+                // If no pretokenized data for this field but document has the data,
+                // fall through to normal path. Otherwise skip to facet handling.
+                if(!used_pretokenized && (document.count(afield.name) == 0)) {
+                    continue;
+                }
             }
 
-            auto field_index_it = record.field_index.find(afield.name);
-            if(field_index_it == record.field_index.end()) {
-                continue;
-            }
+            if(!used_pretokenized) {
+                if(document.count(afield.name) == 0 || !record.indexed.ok()) {
+                    continue;
+                }
 
-            if(afield.facet) {
-                if(afield.is_array()) {
-                    const auto& field_values = document[afield.name];
-                    for(size_t i = 0; i < field_values.size(); i++) {
-                        if(afield.type == field_types::INT32_ARRAY) {
-                            int32_t raw_val = field_values[i].get<int32_t>();
+                auto field_index_it = record.field_index.find(afield.name);
+                if(field_index_it == record.field_index.end()) {
+                    continue;
+                }
+
+                if(afield.facet) {
+                    if(afield.is_array()) {
+                        const auto& field_values = document[afield.name];
+                        for(size_t i = 0; i < field_values.size(); i++) {
+                            if(afield.type == field_types::INT32_ARRAY) {
+                                int32_t raw_val = field_values[i].get<int32_t>();
+                                auto fhash = reinterpret_cast<uint32_t&>(raw_val);
+                                facet_value_id_t facet_value_id(std::to_string(raw_val), fhash);
+                                fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
+                                seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                            } else if(afield.type == field_types::INT64_ARRAY) {
+                                int64_t raw_val = field_values[i].get<int64_t>();
+                                facet_value_id_t facet_value_id(std::to_string(raw_val));
+                                fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
+                                seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                            } else if(afield.type == field_types::STRING_ARRAY) {
+                                const std::string& raw_val =
+                                        field_values[i].get<std::string>().substr(0, facet_index_t::MAX_FACET_VAL_LEN);
+                                facet_value_id_t facet_value_id(raw_val);
+                                fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
+                                seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                            } else if(afield.type == field_types::FLOAT_ARRAY) {
+                                float raw_val = field_values[i].get<float>();
+                                auto fhash = reinterpret_cast<uint32_t&>(raw_val);
+                                facet_value_id_t facet_value_id(StringUtils::float_to_str(raw_val), fhash);
+                                fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
+                                seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                            } else if(afield.type == field_types::BOOL_ARRAY) {
+                                bool raw_val = field_values[i].get<bool>();
+                                auto fhash = (uint32_t)raw_val;
+                                auto str_val = (raw_val == 1) ? "true" : "false";
+                                facet_value_id_t facet_value_id(str_val, fhash);
+                                fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
+                                seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                            }
+                        }
+                    } else {
+                        if(afield.type == field_types::INT32) {
+                            int32_t raw_val = document[afield.name].get<int32_t>();
                             auto fhash = reinterpret_cast<uint32_t&>(raw_val);
                             facet_value_id_t facet_value_id(std::to_string(raw_val), fhash);
                             fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
                             seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                        } else if(afield.type == field_types::INT64_ARRAY) {
-                            int64_t raw_val = field_values[i].get<int64_t>();
+                        }
+                        else if(afield.type == field_types::INT64) {
+                            int64_t raw_val = document[afield.name].get<int64_t>();
                             facet_value_id_t facet_value_id(std::to_string(raw_val));
                             fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
                             seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                        } else if(afield.type == field_types::STRING_ARRAY) {
+                        }
+                        else if(afield.type == field_types::STRING) {
                             const std::string& raw_val =
-                                    field_values[i].get<std::string>().substr(0, facet_index_t::MAX_FACET_VAL_LEN);
+                                    document[afield.name].get<std::string>().substr(0, facet_index_t::MAX_FACET_VAL_LEN);
                             facet_value_id_t facet_value_id(raw_val);
                             fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
                             seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                        } else if(afield.type == field_types::FLOAT_ARRAY) {
-                            float raw_val = field_values[i].get<float>();
-                            auto fhash = reinterpret_cast<uint32_t&>(raw_val);
-                            facet_value_id_t facet_value_id(StringUtils::float_to_str(raw_val), fhash);
+                        }
+                        else if(afield.type == field_types::FLOAT) {
+                            float raw_val = document[afield.name].get<float>();
+                            const std::string& float_str_val = StringUtils::float_to_str(raw_val);
+                            float normalized_raw_val = std::stof(float_str_val);
+                            auto fhash = reinterpret_cast<uint32_t&>(normalized_raw_val);
+                            facet_value_id_t facet_value_id(float_str_val, fhash);
                             fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
                             seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                        } else if(afield.type == field_types::BOOL_ARRAY) {
-                            bool raw_val = field_values[i].get<bool>();
+                        }
+                        else if(afield.type == field_types::BOOL) {
+                            bool raw_val = document[afield.name].get<bool>();
                             auto fhash = (uint32_t)raw_val;
                             auto str_val = (raw_val == 1) ? "true" : "false";
                             facet_value_id_t facet_value_id(str_val, fhash);
@@ -810,60 +923,22 @@ void Index::index_field_in_memory(const std::string& collection_name, const fiel
                             seq_id_to_fvalues[seq_id].push_back(facet_value_id);
                         }
                     }
-                } else {
-                    if(afield.type == field_types::INT32) {
-                        int32_t raw_val = document[afield.name].get<int32_t>();
-                        auto fhash = reinterpret_cast<uint32_t&>(raw_val);
-                        facet_value_id_t facet_value_id(std::to_string(raw_val), fhash);
-                        fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
-                        seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                    }
-                    else if(afield.type == field_types::INT64) {
-                        int64_t raw_val = document[afield.name].get<int64_t>();
-                        facet_value_id_t facet_value_id(std::to_string(raw_val));
-                        fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
-                        seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                    }
-                    else if(afield.type == field_types::STRING) {
-                        const std::string& raw_val =
-                                document[afield.name].get<std::string>().substr(0, facet_index_t::MAX_FACET_VAL_LEN);
-                        facet_value_id_t facet_value_id(raw_val);
-                        fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
-                        seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                    }
-                    else if(afield.type == field_types::FLOAT) {
-                        float raw_val = document[afield.name].get<float>();
-                        const std::string& float_str_val = StringUtils::float_to_str(raw_val);
-                        float normalized_raw_val = std::stof(float_str_val);
-                        auto fhash = reinterpret_cast<uint32_t&>(normalized_raw_val);
-                        facet_value_id_t facet_value_id(float_str_val, fhash);
-                        fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
-                        seq_id_to_fvalues[seq_id].push_back(facet_value_id);
-                    }
-                    else if(afield.type == field_types::BOOL) {
-                        bool raw_val = document[afield.name].get<bool>();
-                        auto fhash = (uint32_t)raw_val;
-                        auto str_val = (raw_val == 1) ? "true" : "false";
-                        facet_value_id_t facet_value_id(str_val, fhash);
-                        fvalue_to_seq_ids[facet_value_id].push_back(seq_id);
-                        seq_id_to_fvalues[seq_id].push_back(facet_value_id);
+                }
+
+                if(record.points > max_score) {
+                    max_score = record.points;
+                }
+
+                for(auto& token_offsets: field_index_it->second.offsets) {
+                    token_to_doc_offsets[token_offsets.first].emplace_back(seq_id, record.points, token_offsets.second);
+
+                    if(afield.infix) {
+                        auto strhash = StringUtils::hash_wy(token_offsets.first.c_str(), token_offsets.first.size());
+                        const auto& infix_sets = infix_index.at(afield.name);
+                        infix_sets[strhash % 4]->insert(token_offsets.first);
                     }
                 }
-            }
-
-            if(record.points > max_score) {
-                max_score = record.points;
-            }
-
-            for(auto& token_offsets: field_index_it->second.offsets) {
-                token_to_doc_offsets[token_offsets.first].emplace_back(seq_id, record.points, token_offsets.second);
-
-                if(afield.infix) {
-                    auto strhash = StringUtils::hash_wy(token_offsets.first.c_str(), token_offsets.first.size());
-                    const auto& infix_sets = infix_index.at(afield.name);
-                    infix_sets[strhash % 4]->insert(token_offsets.first);
-                }
-            }
+            } // end if(!used_pretokenized)
         }
 
         facet_index_v4->insert(afield.name, fvalue_to_seq_ids, seq_id_to_fvalues, afield.is_string());

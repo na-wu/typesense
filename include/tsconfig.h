@@ -110,6 +110,9 @@ private:
 
     uint32_t shutdown_delay_seconds;
 
+    bool enable_pretokenized_restore;
+    bool enable_pretokenized_write;
+
 protected:
 
     Config() {
@@ -165,6 +168,9 @@ protected:
         this->proxy_rate_limit = 1000;
 
         this->proxy_allow_only_peer_src_ips = false;
+
+        this->enable_pretokenized_restore = false;
+        this->enable_pretokenized_write = false;
     }
 
     Config(Config const&) {
@@ -556,6 +562,22 @@ public:
 
     bool get_proxy_allow_only_peer_src_ips() {
         return proxy_allow_only_peer_src_ips;
+    }
+
+    bool get_enable_pretokenized_restore() const {
+        return enable_pretokenized_restore;
+    }
+
+    bool get_enable_pretokenized_write() const {
+        return enable_pretokenized_write;
+    }
+
+    void set_enable_pretokenized_restore(bool val) {
+        enable_pretokenized_restore = val;
+    }
+
+    void set_enable_pretokenized_write(bool val) {
+        enable_pretokenized_write = val;
     }
 
     // loaders

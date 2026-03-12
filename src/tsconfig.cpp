@@ -331,6 +331,9 @@ void Config::load_config_env() {
     if(!get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS").empty()) {
         this->shutdown_delay_seconds = std::stoi(get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS"));
     }
+
+    this->enable_pretokenized_write = ("TRUE" == get_env("TYPESENSE_ENABLE_PRETOKENIZED_WRITE"));
+    this->enable_pretokenized_restore = ("TRUE" == get_env("TYPESENSE_ENABLE_PRETOKENIZED_RESTORE"));
 }
 
 void Config::load_config_file(cmdline::parser& options) {
@@ -591,6 +594,16 @@ void Config::load_config_file(cmdline::parser& options) {
     if(reader.Exists("server", "shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = reader.GetInteger("server", "shutdown-delay-seconds", 0);
     }
+
+    if(reader.Exists("server", "enable-pretokenized-write")) {
+        auto enable_pretokenized_write_str = reader.Get("server", "enable-pretokenized-write", "false");
+        this->enable_pretokenized_write = (enable_pretokenized_write_str == "true");
+    }
+
+    if(reader.Exists("server", "enable-pretokenized-restore")) {
+        auto enable_pretokenized_restore_str = reader.Get("server", "enable-pretokenized-restore", "false");
+        this->enable_pretokenized_restore = (enable_pretokenized_restore_str == "true");
+    }
 }
 
 void Config::load_config_cmd_args(cmdline::parser& options)  {
@@ -822,6 +835,14 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = options.get<uint32_t>("shutdown-delay-seconds");
+    }
+
+    if(options.exist("enable-pretokenized-write")) {
+        this->enable_pretokenized_write = options.get<bool>("enable-pretokenized-write");
+    }
+
+    if(options.exist("enable-pretokenized-restore")) {
+        this->enable_pretokenized_restore = options.get<bool>("enable-pretokenized-restore");
     }
 }
 

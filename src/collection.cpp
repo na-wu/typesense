@@ -1,4 +1,5 @@
 #include "collection.h"
+#include "pretokenized_doc.h"
 
 #include <numeric>
 #include <chrono>
@@ -834,7 +835,15 @@ void Collection::batch_index(std::vector<index_record>& index_records, std::vect
                 }
                 const std::string& serialized_json = index_record.new_doc.dump(-1, ' ', false, nlohmann::detail::error_handler_t::ignore);
 
-                bool write_ok = store->insert(get_seq_id_key(index_record.seq_id), serialized_json);
+                rocksdb::WriteBatch update_batch;
+                update_batch.Put(get_seq_id_key(index_record.seq_id), serialized_json);
+
+                if(!index_record.pretokenized_blob.empty()) {
+                    std::string tok_key = get_seq_id_key(index_record.seq_id) + "_tok";
+                    update_batch.Put(tok_key, index_record.pretokenized_blob);
+                }
+
+                bool write_ok = store->batch_write(update_batch);
 
                 if(!write_ok) {
                     // we will attempt to reindex the old doc on a best-effort basis
@@ -862,6 +871,12 @@ void Collection::batch_index(std::vector<index_record>& index_records, std::vect
                 rocksdb::WriteBatch batch;
                 batch.Put(get_doc_id_key(index_record.doc["id"]), seq_id_str);
                 batch.Put(get_seq_id_key(index_record.seq_id), serialized_json);
+
+                if(!index_record.pretokenized_blob.empty()) {
+                    std::string tok_key = get_seq_id_key(index_record.seq_id) + "_tok";
+                    batch.Put(tok_key, index_record.pretokenized_blob);
+                }
+
                 bool write_ok = store->batch_write(batch);
 
                 if(!write_ok) {
@@ -5839,6 +5854,10 @@ void Collection::remove_document(nlohmann::json & document, const uint32_t seq_i
 
         store->remove(get_doc_id_key(id));
         store->remove(get_seq_id_key(seq_id));
+
+        // Also remove pre-tokenized data if it exists
+        std::string tok_key = get_seq_id_key(seq_id) + "_tok";
+        store->remove(tok_key);
     }
 }
 
@@ -6615,8 +6634,15 @@ Option<bool> Collection::batch_alter_data(const std::vector<field>& alter_fields
     auto begin = std::chrono::high_resolution_clock::now();
 
     while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+        // Skip _tok keys
+        const std::string alter_key = iter->key().ToString();
+        if(alter_key.size() >= 4 && alter_key.substr(alter_key.size() - 4) == "_tok") {
+            iter->Next();
+            continue;
+        }
+
         altered_docs++;
-        const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+        const uint32_t seq_id = Collection::get_seq_id_from_key(alter_key);
 
         nlohmann::json document;
 
@@ -7298,8 +7324,15 @@ Option<bool> Collection::validate_alter_payload(nlohmann::json& schema_changes,
     auto begin = std::chrono::high_resolution_clock::now();
 
     while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+        // Skip _tok keys
+        const std::string validate_key = iter->key().ToString();
+        if(validate_key.size() >= 4 && validate_key.substr(validate_key.size() - 4) == "_tok") {
+            iter->Next();
+            continue;
+        }
+
         validated_docs++;
-        const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+        const uint32_t seq_id = Collection::get_seq_id_from_key(validate_key);
         nlohmann::json document;
 
         try {
@@ -8692,7 +8725,15 @@ Option<size_t> Collection::remove_all_docs() {
 
     auto begin = std::chrono::high_resolution_clock::now();
     while(iter->Valid() && iter->key().starts_with(delete_key_prefix)) {
-        const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+        const std::string current_key = iter->key().ToString();
+
+        // Skip _tok keys — they will be removed alongside their parent document
+        if(current_key.size() >= 4 && current_key.substr(current_key.size() - 4) == "_tok") {
+            iter->Next();
+            continue;
+        }
+
+        const uint32_t seq_id = Collection::get_seq_id_from_key(current_key);
         const std::string& doc_string = iter->value().ToString();
 
         try {

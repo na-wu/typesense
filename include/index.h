@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pretokenized_doc.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -303,6 +304,10 @@ struct index_record {
     Option<bool> indexed;               // indicates if the indexing operation was a success
 
     DIRTY_VALUES dirty_values;
+
+    PreTokenizedDoc pretokenized;       // pre-tokenized data for fast restore
+    bool skip_preprocessing = false;    // skip validation + tokenization during restore
+    std::string pretokenized_blob;      // serialized binary blob for write path
 
     index_record(size_t record_pos, uint32_t seq_id, const nlohmann::json& doc, index_operation_t operation,
                  const DIRTY_VALUES& dirty_values):

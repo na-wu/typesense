@@ -3,6 +3,7 @@
 #include <json.hpp>
 #include <app_metrics.h>
 #include <analytics_manager.h>
+#include "pretokenized_doc.h"
 #include "collection_manager.h"
 #include "analytics_manager.h"
 #include "batched_indexer.h"
@@ -2109,8 +2110,29 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
     auto begin = std::chrono::high_resolution_clock::now();
 
     while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+        const std::string key_str = iter->key().ToString();
+
+        // Skip _tok keys — they are read separately when needed
+        if(key_str.size() >= 4 && key_str.substr(key_str.size() - 4) == "_tok") {
+            iter->Next();
+            continue;
+        }
+
         num_found_docs++;
-        const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+        const uint32_t seq_id = Collection::get_seq_id_from_key(key_str);
+
+        // Check for pre-tokenized data if enabled
+        bool has_pretokenized = false;
+        PreTokenizedDoc ptdoc;
+
+        if(Config::get_instance().get_enable_pretokenized_restore()) {
+            std::string tok_key = key_str + "_tok";
+            std::string tok_data;
+            StoreStatus tok_status = cm.store->get(tok_key, tok_data);
+            if(tok_status == StoreStatus::FOUND) {
+                has_pretokenized = PreTokenizedDoc::deserialize(tok_data, ptdoc);
+            }
+        }
 
         nlohmann::json document;
         const std::string& doc_string = iter->value().ToString();
@@ -2135,9 +2157,25 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
 
         index_records.emplace_back(index_record(0, seq_id, document, CREATE, dirty_values));
 
+        if(has_pretokenized) {
+            index_records.back().pretokenized = std::move(ptdoc);
+            index_records.back().skip_preprocessing = true;
+        }
+
         // Peek and check for last record right here so that we handle batched indexing correctly
         // Without doing this, the "last batch" would have to be indexed outside the loop.
         iter->Next();
+
+        // Skip over any _tok keys when peeking for the last record
+        while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+            std::string peek_key = iter->key().ToString();
+            if(peek_key.size() >= 4 && peek_key.substr(peek_key.size() - 4) == "_tok") {
+                iter->Next();
+            } else {
+                break;
+            }
+        }
+
         bool last_record = !(iter->Valid() && iter->key().starts_with(seq_id_prefix));
 
         // if expected memory usage exceeds 250M, we index the accumulated set without caring about batch size
@@ -2301,6 +2339,13 @@ Option<Collection*> CollectionManager::clone_collection(const string& existing_n
         auto begin = std::chrono::high_resolution_clock::now();
 
         while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+            // Skip _tok keys (pre-tokenized data)
+            const std::string copy_key = iter->key().ToString();
+            if(copy_key.size() >= 4 && copy_key.substr(copy_key.size() - 4) == "_tok") {
+                iter->Next();
+                continue;
+            }
+
             num_found_docs++;
 
             nlohmann::json document;

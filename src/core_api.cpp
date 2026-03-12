@@ -1450,6 +1450,13 @@ bool get_export_documents(const std::shared_ptr<http_req>& req, const std::share
         std::string().swap(res->body);
 
         while(it->Valid() && it->key().ToString().compare(0, seq_id_prefix.size(), seq_id_prefix) == 0) {
+            // Skip _tok keys (pre-tokenized data)
+            const std::string export_key = it->key().ToString();
+            if(export_key.size() >= 4 && export_key.substr(export_key.size() - 4) == "_tok") {
+                it->Next();
+                continue;
+            }
+
             nlohmann::json doc = nlohmann::json::parse(it->value().ToString());
             Collection::remove_flat_fields(doc);
             Collection::remove_reference_helper_fields(doc);

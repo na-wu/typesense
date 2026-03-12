@@ -146,6 +146,13 @@ void init_cmdline_options(cmdline::parser & options, int argc, char **argv) {
     options.add<std::string>("proxy-disallowed-dest-cidrs", '\0', "Disallowed dest CIDRs for proxy.", false, "");
     options.add<bool>("proxy-allow-only-peer-src-ips", '\0', "Allow only peers as src IPs for proxy.", false, false);
 
+    options.add<bool>("enable-pretokenized-write", '\0',
+        "Store pre-tokenized binary data alongside JSON for faster restore. Default: false.",
+        false, false);
+    options.add<bool>("enable-pretokenized-restore", '\0',
+        "Use pre-tokenized data during restore (requires data written with --enable-pretokenized-write). Default: false.",
+        false, false);
+
     //rocksdb options
     options.add<uint32_t>("db-write-buffer-size", '\0', "rocksdb write buffer size.", false);
     options.add<uint32_t>("db-max-write-buffer-number", '\0', "rocksdb max write buffer number.", false);
