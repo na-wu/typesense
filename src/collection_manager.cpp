@@ -2091,6 +2091,16 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
         }
     }
 
+    // Pre-size data structures to avoid rehashing during restore
+    if(Config::get_instance().get_enable_presize_structures()) {
+        uint32_t expected_docs = collection->get_expected_num_documents();
+        if(expected_docs > 0) {
+            LOG(INFO) << "Pre-sizing data structures for " << collection->get_name()
+                      << " (" << expected_docs << " expected docs)";
+            collection->pre_size_for_restore(expected_docs);
+        }
+    }
+
     // Fetch records from the store and re-create memory index
     const std::string seq_id_prefix = collection->get_seq_id_collection_prefix();
     std::string upper_bound_key = collection->get_seq_id_collection_prefix() + "`";  // cannot inline this

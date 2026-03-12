@@ -857,6 +857,15 @@ public:
 
     uint32_t get_next_seq_id();
 
+    // Returns the next_seq_id value — the expected total number of documents
+    // during a restore (before any new documents are added).
+    // NOTE: This is an upper bound — some seq_ids may be deleted.
+    uint32_t get_expected_num_documents() const {
+        return next_seq_id.load();
+    }
+
+    void pre_size_for_restore(uint32_t expected_docs);
+
     Option<uint32_t> doc_id_to_seq_id(const std::string & doc_id) const;
 
     std::vector<std::string> get_facet_fields();

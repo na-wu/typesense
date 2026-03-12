@@ -201,6 +201,10 @@ uint32_t Collection::get_next_seq_id() {
     return next_seq_id++;
 }
 
+void Collection::pre_size_for_restore(uint32_t expected_docs) {
+    index->pre_size_for_restore(expected_docs);
+}
+
 inline std::string get_field_value(const nlohmann::json& doc, const std::string& field_name) {
     return doc[field_name].is_number_integer() ?
                 std::to_string(doc[field_name].get<int64_t>()) :

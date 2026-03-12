@@ -164,6 +164,8 @@ public:
     
     void initialize(const std::string& field);
 
+    void pre_size_for_restore(uint32_t expected_num_docs);
+
     void handle_index_change(const std::string& field_name, size_t total_num_docs,
                              size_t facet_index_threshold, size_t facet_count);
 
