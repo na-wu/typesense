@@ -135,6 +135,9 @@ void init_cmdline_options(cmdline::parser & options, int argc, char **argv) {
     options.add<uint32_t>("analytics-flush-interval", '\0', "Frequency of persisting analytics data to disk (in seconds).", false, 3600);
     options.add<uint32_t>("housekeeping-interval", '\0', "Frequency of housekeeping background job (in seconds).", false, 1800);
     options.add<bool>("enable-lazy-filter", '\0', "Filter clause will be evaluated lazily.", false, false);
+    options.add<bool>("enable-bulk-load-posting", '\0',
+        "Use bulk-load path for posting lists during restore (assumes sorted seq_ids). Default: true.",
+        false, true);
     options.add<uint32_t>("db-compaction-interval", '\0', "Frequency of RocksDB compaction (in seconds).", false, 604800);
     options.add<uint16_t>("filter-by-max-ops", '\0', "Maximum number of operations permitted in filtery_by.", false, Config::FILTER_BY_DEFAULT_OPERATIONS);
 

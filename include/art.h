@@ -197,7 +197,7 @@ void* art_insert(art_tree *t, const unsigned char *key, int key_len, art_documen
 
 /* Insert multiple docs sharing the same key */
 void* art_inserts(art_tree *t, const unsigned char *key, int key_len, const int64_t docs_max_score,
-                  std::vector<art_document>& documents);
+                  std::vector<art_document>& documents, bool bulk_load = false);
 
 /**
  * Deletes a value from the ART tree

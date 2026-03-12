@@ -21,6 +21,7 @@
 #include <posting.h>
 #include <or_iterator.h>
 #include "art.h"
+#include "posting_list.h"
 #include "logger.h"
 #include "array_utils.h"
 #include "filter_result_iterator.h"
@@ -432,6 +433,59 @@ static void add_document_to_leaf(art_document *document, art_leaf *leaf) {
     }
 }
 
+// Bulk-load variant: batches all documents into a single bulk_append_sorted call
+static void add_documents_to_leaf_bulk(const std::vector<art_document>& documents,
+                                       art_leaf* leaf, bool bulk_load) {
+    if(!bulk_load) {
+        for(size_t i = 0; i < documents.size(); i++) {
+            add_document_to_leaf(const_cast<art_document*>(&documents[i]), leaf);
+        }
+        return;
+    }
+
+    // Bulk path: collect all (id, offsets) and call bulk_append_sorted once
+    std::vector<std::pair<uint32_t, std::vector<uint32_t>>> entries;
+    entries.reserve(documents.size());
+
+    int64_t max_score = leaf->max_score;
+    bool frequency_based = false;
+
+    for(const auto& doc : documents) {
+        entries.emplace_back(doc.id, doc.offsets);
+        if(doc.score == USE_FREQUENCY_SCORE) {
+            frequency_based = true;
+        } else {
+            max_score = MAX(max_score, doc.score);
+        }
+    }
+
+    if(IS_COMPACT_POSTING(leaf->values)) {
+        // Check if we should pre-promote to full posting_list
+        compact_posting_list_t* compact = (compact_posting_list_t*) RAW_POSTING_PTR(leaf->values);
+        size_t needed = compact->length + entries.size();
+        if(needed > posting_t::COMPACT_LIST_THRESHOLD_LENGTH / 2) {
+            // Promote early, then bulk append
+            posting_list_t* full_list = compact->to_full_posting_list();
+            free(compact);
+            leaf->values = full_list;
+            full_list->bulk_append_sorted(entries);
+        } else {
+            // Still compact — insert one by one (small list)
+            for(const auto& doc : documents) {
+                posting_t::upsert(leaf->values, doc.id, doc.offsets);
+            }
+        }
+    } else {
+        posting_list_t* plist = (posting_list_t*)(leaf->values);
+        plist->bulk_append_sorted(entries);
+    }
+
+    leaf->max_score = max_score;
+    if(frequency_based) {
+        leaf->max_score = posting_t::num_ids(leaf->values);
+    }
+}
+
 static art_leaf* make_leaf(const unsigned char *key, uint32_t key_len, art_document *document) {
     art_leaf *l = (art_leaf *) malloc(sizeof(art_leaf) + key_len);
     l->key_len = key_len;
@@ -618,12 +672,20 @@ static int prefix_mismatch(const art_node *n, const unsigned char *key, int key_
 
 static void* recursive_insert(art_node* n, art_node** ref, const unsigned char* key, uint32_t key_len,
                               const int64_t docs_max_score, std::vector<art_document>& documents, int depth,
-                              std::list<art_node*>& path, int* old) {
+                              std::list<art_node*>& path, int* old, bool bulk_load = false) {
     // If we are at a NULL node, inject a leaf
     if (!n) {
         art_leaf* new_leaf = make_leaf(key, key_len, &documents[0]);
-        for(size_t i = 1; i < documents.size(); i++) {
-            add_document_to_leaf(&documents[i], new_leaf);
+        if(documents.size() > 1) {
+            if(bulk_load) {
+                // Skip the first doc (already added by make_leaf), bulk-add the rest
+                std::vector<art_document> remaining(documents.begin() + 1, documents.end());
+                add_documents_to_leaf_bulk(remaining, new_leaf, true);
+            } else {
+                for(size_t i = 1; i < documents.size(); i++) {
+                    add_document_to_leaf(&documents[i], new_leaf);
+                }
+            }
         }
 
         *ref = (art_node*)SET_LEAF(new_leaf);
@@ -637,8 +699,12 @@ static void* recursive_insert(art_node* n, art_node** ref, const unsigned char* 
         // Check if we are updating an existing value
         if (!leaf_matches(l, key, key_len, depth)) {
             *old = 1;
-            for(size_t i = 0; i < documents.size(); i++) {
-                add_document_to_leaf(&documents[i], l);
+            if(bulk_load) {
+                add_documents_to_leaf_bulk(documents, l, true);
+            } else {
+                for(size_t i = 0; i < documents.size(); i++) {
+                    add_document_to_leaf(&documents[i], l);
+                }
             }
             return l->values;
         }
@@ -653,8 +719,15 @@ static void* recursive_insert(art_node* n, art_node** ref, const unsigned char* 
         new_n->n.partial_len = longest_prefix;
         memcpy(new_n->n.partial, key+depth, min(MAX_PREFIX_LEN, longest_prefix));
 
-        for(size_t i = 1; i < documents.size(); i++) {
-            add_document_to_leaf(&documents[i], l2);
+        if(documents.size() > 1) {
+            if(bulk_load) {
+                std::vector<art_document> remaining(documents.begin() + 1, documents.end());
+                add_documents_to_leaf_bulk(remaining, l2, true);
+            } else {
+                for(size_t i = 1; i < documents.size(); i++) {
+                    add_document_to_leaf(&documents[i], l2);
+                }
+            }
         }
 
         // Add the leafs to the new node4
@@ -699,8 +772,15 @@ static void* recursive_insert(art_node* n, art_node** ref, const unsigned char* 
 
         // Insert the new leaf
         art_leaf *l = make_leaf(key, key_len, &documents[0]);
-        for(size_t i = 1; i < documents.size(); i++) {
-            add_document_to_leaf(&documents[i], l);
+        if(documents.size() > 1) {
+            if(bulk_load) {
+                std::vector<art_document> remaining(documents.begin() + 1, documents.end());
+                add_documents_to_leaf_bulk(remaining, l, true);
+            } else {
+                for(size_t i = 1; i < documents.size(); i++) {
+                    add_document_to_leaf(&documents[i], l);
+                }
+            }
         }
 
         add_child4(new_n, ref, key[depth+prefix_diff], SET_LEAF(l));
@@ -713,13 +793,20 @@ static void* recursive_insert(art_node* n, art_node** ref, const unsigned char* 
     // Find a child to recurse to
     art_node **child = find_child(n, key[depth]);
     if (child) {
-        return recursive_insert(*child, child, key, key_len, docs_max_score, documents, depth + 1, path, old);
+        return recursive_insert(*child, child, key, key_len, docs_max_score, documents, depth + 1, path, old, bulk_load);
     }
 
     // No child, node goes within us
     art_leaf *l = make_leaf(key, key_len, &documents[0]);
-    for(size_t i = 1; i < documents.size(); i++) {
-        add_document_to_leaf(&documents[i], l);
+    if(documents.size() > 1) {
+        if(bulk_load) {
+            std::vector<art_document> remaining(documents.begin() + 1, documents.end());
+            add_documents_to_leaf_bulk(remaining, l, true);
+        } else {
+            for(size_t i = 1; i < documents.size(); i++) {
+                add_document_to_leaf(&documents[i], l);
+            }
+        }
     }
 
     add_child(n, ref, key[depth], SET_LEAF(l));
@@ -742,12 +829,12 @@ void* art_insert(art_tree *t, const unsigned char *key, int key_len, art_documen
 }
 
 void* art_inserts(art_tree *t, const unsigned char *key, int key_len, const int64_t docs_max_score,
-                  std::vector<art_document>& documents) {
+                  std::vector<art_document>& documents, bool bulk_load) {
     int old_val = 0;
 
     std::list<art_node*> path;
     bool frequency_based_ordering = (docs_max_score == USE_FREQUENCY_SCORE);
-    void *old = recursive_insert(t->root, &t->root, key, key_len, docs_max_score, documents, 0, path, &old_val);
+    void *old = recursive_insert(t->root, &t->root, key, key_len, docs_max_score, documents, 0, path, &old_val, bulk_load);
     if (!old_val) t->size++;
 
     if(frequency_based_ordering) {

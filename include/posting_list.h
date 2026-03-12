@@ -159,6 +159,12 @@ public:
 
     void upsert(uint32_t id, const std::vector<uint32_t>& offsets);
 
+    // Bulk-append a batch of sorted (id, offsets) pairs.
+    // PRECONDITION: All IDs must be greater than any existing ID in the list.
+    // PRECONDITION: IDs within the batch must be monotonically increasing.
+    // This skips: duplicate check, block lookup via id_block_map, split logic.
+    void bulk_append_sorted(const std::vector<std::pair<uint32_t, std::vector<uint32_t>>>& entries);
+
     void erase(uint32_t id);
 
     void dump();

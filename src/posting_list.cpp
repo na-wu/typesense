@@ -497,6 +497,54 @@ void posting_list_t::upsert(const uint32_t id, const std::vector<uint32_t>& offs
     }
 }
 
+void posting_list_t::bulk_append_sorted(
+    const std::vector<std::pair<uint32_t, std::vector<uint32_t>>>& entries)
+{
+    if(entries.empty()) return;
+
+    // Find the current tail block
+    block_t* current_block;
+    if(id_block_map.empty()) {
+        current_block = &root_block;
+    } else {
+        current_block = id_block_map.rbegin()->second;
+    }
+
+    // Remove current block from id_block_map (we'll re-add after filling)
+    if(!id_block_map.empty() && current_block->size() > 0) {
+        id_block_map.erase(current_block->ids.last());
+    }
+
+    for(const auto& [id, offsets] : entries) {
+        if(current_block->size() >= BLOCK_MAX_ELEMENTS) {
+            // Register filled block in id_block_map
+            id_block_map.emplace(current_block->ids.last(), current_block);
+
+            // Allocate new block and link
+            block_t* new_block = new block_t;
+            current_block->next = new_block;
+            current_block = new_block;
+        }
+
+        // Direct append — no duplicate check, no lower_bound
+        // sorted_array::append will use the fast for_append_sorted path
+        // because id > ids.last() is guaranteed
+        current_block->ids.append(id);
+        uint32_t curr_offset_idx = current_block->offsets.getLength();
+        current_block->offset_index.append(curr_offset_idx);
+        for(uint32_t pos : offsets) {
+            current_block->offsets.append(pos);
+        }
+
+        ids_length++;
+    }
+
+    // Register the final (possibly partial) block
+    if(current_block->size() > 0) {
+        id_block_map.emplace(current_block->ids.last(), current_block);
+    }
+}
+
 void posting_list_t::dump() {
     auto it = new_iterator();
 

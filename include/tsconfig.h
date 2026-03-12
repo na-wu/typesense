@@ -110,6 +110,8 @@ private:
 
     uint32_t shutdown_delay_seconds;
 
+    bool enable_bulk_load_posting;
+
 protected:
 
     Config() {
@@ -165,6 +167,7 @@ protected:
         this->proxy_rate_limit = 1000;
 
         this->proxy_allow_only_peer_src_ips = false;
+        this->enable_bulk_load_posting = true;
     }
 
     Config(Config const&) {
@@ -318,6 +321,10 @@ public:
 
     void set_max_group_limit(uint32_t max_group_limit) {
         this->max_group_limit = max_group_limit;
+    }
+
+    void set_enable_bulk_load_posting(bool val) {
+        this->enable_bulk_load_posting = val;
     }
 
     // getters
@@ -556,6 +563,10 @@ public:
 
     bool get_proxy_allow_only_peer_src_ips() {
         return proxy_allow_only_peer_src_ips;
+    }
+
+    bool get_enable_bulk_load_posting() const {
+        return enable_bulk_load_posting;
     }
 
     // loaders

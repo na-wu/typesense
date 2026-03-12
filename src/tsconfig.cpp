@@ -274,6 +274,10 @@ void Config::load_config_env() {
 
     this->skip_writes = ("TRUE" == get_env("TYPESENSE_SKIP_WRITES"));
     this->enable_lazy_filter = ("TRUE" == get_env("TYPESENSE_ENABLE_LAZY_FILTER"));
+
+    if(!get_env("TYPESENSE_ENABLE_BULK_LOAD_POSTING").empty()) {
+        this->enable_bulk_load_posting = ("TRUE" == get_env("TYPESENSE_ENABLE_BULK_LOAD_POSTING"));
+    }
     this->reset_peers_on_error = ("TRUE" == get_env("TYPESENSE_RESET_PEERS_ON_ERROR"));
 
     if(!get_env("TYPESENSE_MAX_PER_PAGE").empty()) {
@@ -533,6 +537,11 @@ void Config::load_config_file(cmdline::parser& options) {
         this->enable_lazy_filter = (enable_lazy_filter_str == "true");
     }
 
+    if(reader.Exists("server", "enable-bulk-load-posting")) {
+        auto enable_bulk_load_posting_str = reader.Get("server", "enable-bulk-load-posting", "true");
+        this->enable_bulk_load_posting = (enable_bulk_load_posting_str == "true");
+    }
+
     if(reader.Exists("server", "skip-writes")) {
         auto skip_writes_str = reader.Get("server", "skip-writes", "false");
         this->skip_writes = (skip_writes_str == "true");
@@ -770,6 +779,10 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("enable-lazy-filter")) {
         this->enable_lazy_filter = options.get<bool>("enable-lazy-filter");
+    }
+
+    if(options.exist("enable-bulk-load-posting")) {
+        this->enable_bulk_load_posting = options.get<bool>("enable-bulk-load-posting");
     }
 
     if(options.exist("enable-search-logging")) {

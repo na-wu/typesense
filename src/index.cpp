@@ -637,7 +637,8 @@ size_t Index::batch_memory_index(Index *index,
                                  const std::vector<char>& symbols_to_index,
                                  std::unordered_set<std::string>& found_fields,
                                  const bool use_addition_fields, const tsl::htrie_map<char, field>& addition_fields,
-                                 const std::string& collection_name) {
+                                 const std::string& collection_name,
+                                 bool bulk_load_mode) {
     const size_t concurrency = Config::get_instance().get_max_indexing_concurrency();
     const size_t num_threads = std::min(concurrency, iter_batch.size());
     const size_t window_size = (num_threads == 0) ? 0 :
@@ -689,7 +690,7 @@ size_t Index::batch_memory_index(Index *index,
             const field& f = (field_name == "id") ?
                              field("id", field_types::STRING, false) : indexable_schema.at(field_name);
             try {
-                index->index_field_in_memory(collection_name, f, iter_batch);
+                index->index_field_in_memory(collection_name, f, iter_batch, bulk_load_mode);
             } catch(std::exception& e) {
                 LOG(ERROR) << "Unhandled Typesense error: " << e.what();
                 for(auto& record: iter_batch) {
@@ -712,7 +713,8 @@ size_t Index::batch_memory_index(Index *index,
 }
 
 void Index::index_field_in_memory(const std::string& collection_name, const field& afield,
-                                  std::vector<index_record>& iter_batch) {
+                                  std::vector<index_record>& iter_batch,
+                                  bool bulk_load_mode) {
     // indexes a given field of all documents in the batch
 
     if(afield.name == "id") {
@@ -883,7 +885,7 @@ void Index::index_field_in_memory(const std::string& collection_name, const fiel
             int key_len = (int) token.length() + 1;  // for the terminating \0 char
 
             //LOG(INFO) << "key: " << key << ", art_doc.id: " << art_doc.id;
-            art_inserts(t, key, key_len, max_score, documents);
+            art_inserts(t, key, key_len, max_score, documents, bulk_load_mode);
         }
     }
 

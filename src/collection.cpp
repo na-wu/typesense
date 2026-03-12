@@ -1,4 +1,5 @@
 #include "collection.h"
+#include "tsconfig.h"
 
 #include <numeric>
 #include <chrono>
@@ -953,7 +954,8 @@ Option<uint32_t> Collection::index_in_memory(nlohmann::json &document, uint32_t 
 }
 
 size_t Collection::batch_index_in_memory(std::vector<index_record>& index_records, const size_t remote_embedding_batch_size,
-                                         const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries, const bool generate_embeddings) {
+                                         const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries,
+                                         const bool generate_embeddings, bool is_restore) {
     std::shared_lock alter_shlock(alter_mutex);
     std::shared_lock shlock(mutex);
     Index::batch_validate_and_preprocess(index, index_records, default_sorting_field, search_schema, embedding_fields,
@@ -963,10 +965,12 @@ size_t Collection::batch_index_in_memory(std::vector<index_record>& index_record
     std::unique_lock lock(mutex);
     const auto collection_name = name;
     std::unordered_set<std::string> found_fields;
+    bool bulk_load = is_restore && Config::get_instance().get_enable_bulk_load_posting();
     size_t num_indexed = Index::batch_memory_index(index, index_records, default_sorting_field,
                                                    search_schema, embedding_fields, fallback_field_type,
                                                    token_separators, symbols_to_index, found_fields,
-                                                   false, tsl::htrie_map<char, field>(), collection_name);
+                                                   false, tsl::htrie_map<char, field>(), collection_name,
+                                                   bulk_load);
     num_documents += num_indexed;
 
     spp::sparse_hash_map<std::string, std::set<reference_pair_t>> found_async_referenced_ins;

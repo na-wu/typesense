@@ -2146,7 +2146,8 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
         // batch must match atleast the number of shards
          if(exceeds_batch_mem_threshold || (num_valid_docs % batch_size == 0) || last_record) {
             size_t num_records = index_records.size();
-            size_t num_indexed = collection->batch_index_in_memory(index_records, 200, 60000, 2, false);
+            size_t num_indexed = collection->batch_index_in_memory(index_records, 200, 60000, 2, false,
+                                                                    /*is_restore=*/true);
             batch_doc_str_size = 0;
 
             if(num_indexed != num_records) {
