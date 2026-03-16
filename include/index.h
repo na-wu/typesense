@@ -842,10 +842,12 @@ public:
                                      std::unordered_set<std::string>& found_fields,
                                      const bool use_addition_fields = false,
                                      const tsl::htrie_map<char, field>& addition_fields = tsl::htrie_map<char, field>(),
-                                     const std::string& collection_name = "");
+                                     const std::string& collection_name = "",
+                                     bool bulk_load_mode = false);
 
     void index_field_in_memory(const std::string& collection_name, const field& afield,
-                               std::vector<index_record>& iter_batch);
+                               std::vector<index_record>& iter_batch,
+                               bool bulk_load_mode = false);
 
     template<class T>
     void iterate_and_index_numerical_field(std::vector<index_record>& iter_batch, const field& afield, T func);

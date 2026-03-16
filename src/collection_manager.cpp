@@ -2118,10 +2118,50 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
 
         ScannedBatch batch;
 
+<<<<<<< HEAD
         while(scanner.next_batch(batch)) {
             size_t num_records = batch.records.size();
             size_t num_indexed = collection->batch_index_in_memory(
                 batch.records, 200, 60000, 2, false);
+=======
+        nlohmann::json document;
+        const std::string& doc_string = iter->value().ToString();
+
+        try {
+            document = nlohmann::json::parse(doc_string);
+        } catch(const std::exception& e) {
+            LOG(ERROR) << "JSON error: " << e.what();
+            return Option<bool>(400, "Bad JSON.");
+        }
+
+        batch_doc_str_size += doc_string.size();
+
+        if(collection->get_enable_nested_fields()) {
+            std::vector<field> flattened_fields;
+            field::flatten_doc(document, collection->get_nested_fields(), {}, false, flattened_fields);
+        }
+
+        auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
+
+        num_valid_docs++;
+
+        index_records.emplace_back(index_record(0, seq_id, document, CREATE, dirty_values));
+
+        // Peek and check for last record right here so that we handle batched indexing correctly
+        // Without doing this, the "last batch" would have to be indexed outside the loop.
+        iter->Next();
+        bool last_record = !(iter->Valid() && iter->key().starts_with(seq_id_prefix));
+
+        // if expected memory usage exceeds 250M, we index the accumulated set without caring about batch size
+        bool exceeds_batch_mem_threshold = ((batch_doc_str_size * 7) > (250 * 1014 * 1024));
+
+        // batch must match atleast the number of shards
+         if(exceeds_batch_mem_threshold || (num_valid_docs % batch_size == 0) || last_record) {
+            size_t num_records = index_records.size();
+            size_t num_indexed = collection->batch_index_in_memory(index_records, 200, 60000, 2, false,
+                                                                    /*is_restore=*/true);
+            batch_doc_str_size = 0;
+>>>>>>> fork/method-opt-8-bulk-load-posting-lists
 
             if(num_indexed != num_records) {
                 const std::string& index_error = get_first_index_error(batch.records);

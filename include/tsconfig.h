@@ -113,6 +113,7 @@ private:
     bool enable_simdjson_restore;
     uint32_t parallel_restore_scan_threads;
     bool enable_presize_structures;
+    bool enable_bulk_load_posting;
 
 protected:
 
@@ -173,6 +174,7 @@ protected:
         this->enable_simdjson_restore = true;
         this->parallel_restore_scan_threads = 1;
         this->enable_presize_structures = true;
+        this->enable_bulk_load_posting = true;
     }
 
     Config(Config const&) {
@@ -334,6 +336,8 @@ public:
 
     void set_enable_presize_structures(bool val) {
         this->enable_presize_structures = val;
+    void set_enable_bulk_load_posting(bool val) {
+        this->enable_bulk_load_posting = val;
     }
 
     // getters
@@ -589,6 +593,8 @@ public:
 
     bool get_enable_presize_structures() const {
         return enable_presize_structures;
+    bool get_enable_bulk_load_posting() const {
+        return enable_bulk_load_posting;
     }
 
     // loaders

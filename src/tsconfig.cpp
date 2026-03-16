@@ -279,6 +279,9 @@ void Config::load_config_env() {
         this->enable_simdjson_restore = ("TRUE" == get_env("TYPESENSE_ENABLE_SIMDJSON_RESTORE"));
     }
 
+    if(!get_env("TYPESENSE_ENABLE_BULK_LOAD_POSTING").empty()) {
+        this->enable_bulk_load_posting = ("TRUE" == get_env("TYPESENSE_ENABLE_BULK_LOAD_POSTING"));
+    }
     this->reset_peers_on_error = ("TRUE" == get_env("TYPESENSE_RESET_PEERS_ON_ERROR"));
 
     if(!get_env("TYPESENSE_MAX_PER_PAGE").empty()) {
@@ -550,6 +553,9 @@ void Config::load_config_file(cmdline::parser& options) {
     if(reader.Exists("server", "enable-simdjson-restore")) {
         auto enable_simdjson_restore_str = reader.Get("server", "enable-simdjson-restore", "true");
         this->enable_simdjson_restore = (enable_simdjson_restore_str == "true");
+    if(reader.Exists("server", "enable-bulk-load-posting")) {
+        auto enable_bulk_load_posting_str = reader.Get("server", "enable-bulk-load-posting", "true");
+        this->enable_bulk_load_posting = (enable_bulk_load_posting_str == "true");
     }
 
     if(reader.Exists("server", "skip-writes")) {
@@ -802,6 +808,8 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("enable-simdjson-restore")) {
         this->enable_simdjson_restore = options.get<bool>("enable-simdjson-restore");
+    if(options.exist("enable-bulk-load-posting")) {
+        this->enable_bulk_load_posting = options.get<bool>("enable-bulk-load-posting");
     }
 
     if(options.exist("enable-search-logging")) {
