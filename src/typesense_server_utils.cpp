@@ -89,6 +89,9 @@ void init_cmdline_options(cmdline::parser & options, int argc, char **argv) {
     options.add<uint32_t>("analytics-db-ttl", '\0', "TTL in seconds for events stored in analytics db", false);
     options.add<uint32_t>("analytics-minute-rate-limit", '\0', "per minute rate limit for /events endpoint", false);
     options.add<uint32_t>("shutdown-delay-seconds", '\0', "delay in seconds after which server will shutdown on receiving signal");
+    options.add<uint32_t>("parallel-restore-scan-threads", '\0',
+        "Number of parallel RocksDB scan threads during restore. Default: 1 (sequential).",
+        false, 1);
 
     options.add<std::string>("api-address", '\0', "Address to which Typesense API service binds.", false, "0.0.0.0");
     options.add<uint32_t>("api-port", '\0', "Port on which Typesense API service listens.", false, 8108);

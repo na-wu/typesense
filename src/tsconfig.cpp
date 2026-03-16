@@ -336,6 +336,10 @@ void Config::load_config_env() {
     if(!get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS").empty()) {
         this->shutdown_delay_seconds = std::stoi(get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS"));
     }
+
+    if(!get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS").empty()) {
+        this->parallel_restore_scan_threads = std::stoi(get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS"));
+    }
 }
 
 void Config::load_config_file(cmdline::parser& options) {
@@ -601,6 +605,10 @@ void Config::load_config_file(cmdline::parser& options) {
     if(reader.Exists("server", "shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = reader.GetInteger("server", "shutdown-delay-seconds", 0);
     }
+
+    if(reader.Exists("server", "parallel-restore-scan-threads")) {
+        this->parallel_restore_scan_threads = reader.GetInteger("server", "parallel-restore-scan-threads", 1);
+    }
 }
 
 void Config::load_config_cmd_args(cmdline::parser& options)  {
@@ -836,6 +844,10 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = options.get<uint32_t>("shutdown-delay-seconds");
+    }
+
+    if(options.exist("parallel-restore-scan-threads")) {
+        this->parallel_restore_scan_threads = options.get<uint32_t>("parallel-restore-scan-threads");
     }
 }
 

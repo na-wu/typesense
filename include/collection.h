@@ -899,6 +899,9 @@ public:
 
     static uint32_t get_seq_id_from_key(const std::string & key);
 
+    // Static helper to build the 4-byte big-endian seq_id suffix
+    static std::string get_seq_id_key_suffix(uint32_t seq_id);
+
     Option<bool> get_document_from_store(const std::string & seq_id_key, nlohmann::json & document, bool raw_doc = false) const;
 
     Option<bool> get_document_from_store(const uint32_t& seq_id, nlohmann::json & document, bool raw_doc = false) const;

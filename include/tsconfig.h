@@ -111,6 +111,7 @@ private:
     uint32_t shutdown_delay_seconds;
 
     bool enable_simdjson_restore;
+    uint32_t parallel_restore_scan_threads;
 
 protected:
 
@@ -169,6 +170,7 @@ protected:
         this->proxy_allow_only_peer_src_ips = false;
 
         this->enable_simdjson_restore = true;
+        this->parallel_restore_scan_threads = 1;  // 1 = old behavior (sequential)
     }
 
     Config(Config const&) {
@@ -238,6 +240,10 @@ public:
 
     void set_shutdown_delay_seconds(uint32_t val) {
         this->shutdown_delay_seconds = val;
+    }
+
+    void set_parallel_restore_scan_threads(uint32_t val) {
+        this->parallel_restore_scan_threads = val;
     }
 
     // @deprecated
@@ -352,6 +358,11 @@ public:
     uint32_t get_shutdown_delay_seconds() const {
         return this->shutdown_delay_seconds;
     }
+
+    uint32_t get_parallel_restore_scan_threads() const {
+        return this->parallel_restore_scan_threads;
+    }
+
     // @deprecated
     std::string get_search_only_api_key() const {
         return this->search_only_api_key;
