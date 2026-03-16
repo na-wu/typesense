@@ -1,6 +1,7 @@
 #include "parallel_scanner.h"
 #include "tsconfig.h"
 #include "logger.h"
+#include "fast_json_parse.h"
 
 ParallelScanner::ParallelScanner(Store* store, Collection* collection,
                                  uint32_t max_seq_id, uint32_t num_threads,
@@ -34,6 +35,8 @@ void ParallelScanner::start() {
 
 void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
     const std::string seq_id_prefix = collection_->get_seq_id_collection_prefix();
+    const bool use_simdjson = Config::get_instance().get_enable_simdjson_restore();
+    simdjson::ondemand::parser simdjson_parser;  // per-thread parser (simdjson recommends reuse)
 
     // Build RocksDB key for range_start
     std::string start_key = seq_id_prefix + "_"
@@ -59,7 +62,12 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
 
         nlohmann::json document;
         try {
-            document = nlohmann::json::parse(doc_string);
+            if(use_simdjson) {
+                simdjson::padded_string padded(doc_string);
+                document = FastJsonParser::parse(simdjson_parser, padded);
+            } else {
+                document = nlohmann::json::parse(doc_string);
+            }
         } catch(const std::exception& e) {
             total_parse_errors++;
             iter->Next();
