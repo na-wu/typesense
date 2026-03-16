@@ -112,6 +112,7 @@ private:
 
     bool enable_simdjson_restore;
     uint32_t parallel_restore_scan_threads;
+    bool enable_presize_structures;
 
 protected:
 
@@ -170,7 +171,8 @@ protected:
         this->proxy_allow_only_peer_src_ips = false;
 
         this->enable_simdjson_restore = true;
-        this->parallel_restore_scan_threads = 1;  // 1 = old behavior (sequential)
+        this->parallel_restore_scan_threads = 1;
+        this->enable_presize_structures = true;
     }
 
     Config(Config const&) {
@@ -328,6 +330,10 @@ public:
 
     void set_max_group_limit(uint32_t max_group_limit) {
         this->max_group_limit = max_group_limit;
+    }
+
+    void set_enable_presize_structures(bool val) {
+        this->enable_presize_structures = val;
     }
 
     // getters
@@ -579,6 +585,10 @@ public:
 
     void set_enable_simdjson_restore(bool val) {
         this->enable_simdjson_restore = val;
+    }
+
+    bool get_enable_presize_structures() const {
+        return enable_presize_structures;
     }
 
     // loaders

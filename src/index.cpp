@@ -243,6 +243,22 @@ Index::~Index() {
     field_geopolygon_index.clear();
 }
 
+void Index::pre_size_for_restore(uint32_t expected_num_docs) {
+    if(!Config::get_instance().get_enable_presize_structures()) {
+        return;
+    }
+
+    // Pre-size sort indices
+    for(auto& [field_name, sort_idx] : sort_index) {
+        sort_idx->reserve(expected_num_docs);
+    }
+
+    // Pre-size facet indices
+    if(facet_index_v4) {
+        facet_index_v4->pre_size_for_restore(expected_num_docs);
+    }
+}
+
 int64_t Index::get_points_from_doc(const nlohmann::json &document, const std::string & default_sorting_field) {
     int64_t points = 0;
 
@@ -743,6 +759,10 @@ void Index::index_field_in_memory(const std::string& collection_name, const fiel
 
     if(afield.is_string() || is_facet_field) {
         std::unordered_map<std::string, std::vector<art_document>> token_to_doc_offsets;
+        if(Config::get_instance().get_enable_presize_structures()) {
+            // Estimate: each field has ~3 tokens per doc on average
+            token_to_doc_offsets.reserve(iter_batch.size() * 3);
+        }
         int64_t max_score = INT64_MIN;
 
         std::unordered_map<facet_value_id_t, std::vector<uint32_t>, facet_value_id_t::Hash> fvalue_to_seq_ids;

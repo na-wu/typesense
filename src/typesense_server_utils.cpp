@@ -158,6 +158,8 @@ void init_cmdline_options(cmdline::parser & options, int argc, char **argv) {
     options.add<uint32_t>("db-max-log-file-size", '\0', "rocksdb max logfile size.", false);
     options.add<uint32_t>("db-keep-log-file-num", '\0', "rocksdb number of log files to keep.", false);
 
+    options.add<bool>("enable-presize-structures", '\0', "Pre-size data structures during restore for faster startup.", false, true);
+
     // DEPRECATED
     options.add<std::string>("listen-address", 'h', "[DEPRECATED: use `api-address`] Address to which Typesense API service binds.", false, "0.0.0.0");
     options.add<uint32_t>("listen-port", 'p', "[DEPRECATED: use `api-port`] Port on which Typesense API service listens.", false, 8108);

@@ -1165,6 +1165,8 @@ public:
 
     friend class filter_result_iterator_t;
 
+    void pre_size_for_restore(uint32_t expected_num_docs);
+
     void repair_hnsw_index();
 
     void aggregate_facet(const size_t group_limit, facet& this_facet, facet& acc_facet) const;

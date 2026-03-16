@@ -3,6 +3,13 @@
 #include "string_utils.h"
 #include "array_utils.h"
 
+void facet_index_t::pre_size_for_restore(uint32_t expected_num_docs) {
+    for(auto& [field_name, facet_index] : facet_field_map) {
+        // Reserve the fid_fvalues reverse map to avoid rehashing during restore
+        facet_index.fid_fvalues.reserve(expected_num_docs);
+    }
+}
+
 void facet_index_t::initialize(const std::string& field) {
     const auto facet_field_map_it = facet_field_map.find(field);
     if(facet_field_map_it == facet_field_map.end()) {

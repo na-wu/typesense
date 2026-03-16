@@ -340,6 +340,11 @@ void Config::load_config_env() {
     if(!get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS").empty()) {
         this->parallel_restore_scan_threads = std::stoi(get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS"));
     }
+
+    std::string enable_presize_str = get_env("TYPESENSE_ENABLE_PRESIZE_STRUCTURES");
+    if(!enable_presize_str.empty()) {
+        this->enable_presize_structures = (enable_presize_str == "TRUE");
+    }
 }
 
 void Config::load_config_file(cmdline::parser& options) {
@@ -609,6 +614,11 @@ void Config::load_config_file(cmdline::parser& options) {
     if(reader.Exists("server", "parallel-restore-scan-threads")) {
         this->parallel_restore_scan_threads = reader.GetInteger("server", "parallel-restore-scan-threads", 1);
     }
+
+    if(reader.Exists("server", "enable-presize-structures")) {
+        auto enable_presize_str = reader.Get("server", "enable-presize-structures", "true");
+        this->enable_presize_structures = (enable_presize_str == "true");
+    }
 }
 
 void Config::load_config_cmd_args(cmdline::parser& options)  {
@@ -848,6 +858,10 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("parallel-restore-scan-threads")) {
         this->parallel_restore_scan_threads = options.get<uint32_t>("parallel-restore-scan-threads");
+    }
+
+    if(options.exist("enable-presize-structures")) {
+        this->enable_presize_structures = options.get<bool>("enable-presize-structures");
     }
 }
 
