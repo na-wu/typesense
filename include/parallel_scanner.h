@@ -49,7 +49,7 @@ private:
     std::mutex queue_mutex_;
     std::condition_variable queue_not_empty_;
     std::condition_variable queue_not_full_;
-    static constexpr size_t MAX_QUEUE_DEPTH = 16;  // limit memory usage
+    static constexpr size_t MAX_QUEUE_DEPTH = 8;  // limit memory usage
 
     std::atomic<uint32_t> active_scanners_{0};
     std::atomic<size_t> total_docs_scanned{0};
