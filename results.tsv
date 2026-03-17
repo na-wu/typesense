@@ -11,3 +11,4 @@ d155787	2179	90.3	discard	queue depth 16 (was 8)
 a77a34f	2273	90.0	discard	jemalloc MALLOC_CONF=background_thread:true,dirty/muzzy_decay_ms=0 (WORSE)
 a141c8d	2194	90.5	discard	batch size 20000 (flag-only: --num-documents-parallel-load=20000)
 7364484	2162	90.2	discard	batch seq_id upserts under single lock
+e294deb	2547	89.9	discard	num-collections-parallel-load=1 (MUCH WORSE)
