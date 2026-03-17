@@ -2111,7 +2111,7 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
         while(scanner.next_batch(batch)) {
             size_t num_records = batch.records.size();
             size_t num_indexed = collection->batch_index_in_memory(
-                batch.records, 200, 60000, 2, false, false);  // skip validation during restore
+                batch.records, 200, 60000, 2, false);
 
             if(num_indexed != num_records) {
                 const std::string& index_error = get_first_index_error(batch.records);
