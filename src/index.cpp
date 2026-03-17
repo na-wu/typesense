@@ -720,13 +720,14 @@ void Index::index_field_in_memory(const std::string& collection_name, const fiel
     // indexes a given field of all documents in the batch
 
     if(afield.name == "id") {
-        // Batch all upserts under a single lock to avoid per-record lock overhead
-        std::unique_lock lock(seq_ids_mutex);
         for(const auto& record: iter_batch) {
             if(!record.indexed.ok()) {
+                // some records could have been invalidated upstream
                 continue;
             }
             if(!record.is_update && record.indexed.ok()) {
+                // for updates, the seq_id will already exist
+                std::unique_lock lock(seq_ids_mutex);
                 seq_ids->upsert(record.seq_id);
             }
         }
