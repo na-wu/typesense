@@ -953,12 +953,11 @@ Option<uint32_t> Collection::index_in_memory(nlohmann::json &document, uint32_t 
 }
 
 size_t Collection::batch_index_in_memory(std::vector<index_record>& index_records, const size_t remote_embedding_batch_size,
-                                         const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries,
-                                         const bool generate_embeddings, const bool do_validation) {
+                                         const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries, const bool generate_embeddings) {
     std::shared_lock alter_shlock(alter_mutex);
     std::shared_lock shlock(mutex);
     Index::batch_validate_and_preprocess(index, index_records, default_sorting_field, search_schema, embedding_fields,
-                    fallback_field_type, token_separators, symbols_to_index, do_validation, remote_embedding_batch_size,
+                    fallback_field_type, token_separators, symbols_to_index, true, remote_embedding_batch_size,
                     remote_embedding_timeout_ms, remote_embedding_num_tries, generate_embeddings);
     shlock.unlock();
     std::unique_lock lock(mutex);
