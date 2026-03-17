@@ -1,0 +1,10 @@
+commit	restore_time	peak_rss_gb	status	description
+2801543	2239	94.0	keep	baseline: opt3+opt6+opt5-12 (simdjson + 4 scan threads + 12 indexing threads)
+2801543	2247	94.0	discard	6 scan threads (flag-only: --parallel-restore-scan-threads=6)
+602ce0a	2220	90.3	discard	eliminate string copies in scanner (Slice→padded_string, inline seq_id extraction)
+ab29cc7	2194	94.0	keep	combined: string copy elimination + move semantics for index_record
+5c1ea62	2206	90.2	discard	skip validation during restore (do_validation=false)
+bf221cc	2214	90.1	discard	readahead 4MB (was 2MB)
+9879ed5	2145	90.2	keep	skip per-doc field scanning in batch_memory_index (pre-populate found_fields)
+9879ed5	2171	90.2	discard	max-indexing-concurrency=16 (flag-only, was 12)
+d155787	2179	90.3	discard	queue depth 16 (was 8)
