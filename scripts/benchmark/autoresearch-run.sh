@@ -78,12 +78,25 @@ BENCH_CMD_ID=$(aws --profile "$AWS_PROFILE" ssm send-command \
   --parameters "{\"commands\":[\"export HOME=/root\",\"pkill -9 -f typesense-server 2>/dev/null; sleep 5\",\"rm -rf /opt/typesense/data/*\",\"rsync -a /opt/typesense/snapshot-baseline/ /opt/typesense/data/\",\"echo 3 > /proc/sys/vm/drop_caches 2>/dev/null\",\"> /tmp/typesense-bench/typesense.log\",\"date +%s > /tmp/typesense-bench/start-ts.txt\",\"nohup /opt/binaries/autoresearch/typesense-server --data-dir /opt/typesense/data --api-key fa6412cd020797f9f1490a802c90bd7d25edf01892760d93f201a8b9c9a34d73 --api-port 8108 --log-dir /tmp/typesense-bench --num-documents-parallel-load 10000 --num-collections-parallel-load 2 $EXTRA_FLAGS > /tmp/typesense-bench/autoresearch-stdout.log 2>&1 &\",\"echo BENCH_STARTED\"]}" \
   --output text --query 'Command.CommandId' 2>&1)
 
-# Wait for benchmark to start
-sleep 20
-STATUS=$(aws --profile "$AWS_PROFILE" ssm get-command-invocation \
-  --command-id "$BENCH_CMD_ID" --instance-id "$INSTANCE_ID" \
-  --query 'Status' --output text 2>/dev/null || echo "Pending")
-echo "  Benchmark launched ($STATUS)"
+# Wait for benchmark launch to complete (rsync + server start)
+echo "  Waiting for launch to complete (rsync + server start)..."
+while true; do
+  sleep 15
+  STATUS=$(aws --profile "$AWS_PROFILE" ssm get-command-invocation \
+    --command-id "$BENCH_CMD_ID" --instance-id "$INSTANCE_ID" \
+    --query 'Status' --output text 2>/dev/null || echo "Pending")
+  if [[ "$STATUS" == "Success" ]]; then
+    echo "  Benchmark launched successfully"
+    break
+  elif [[ "$STATUS" == "Failed" ]]; then
+    echo "  Benchmark launch FAILED"
+    aws --profile "$AWS_PROFILE" ssm get-command-invocation \
+      --command-id "$BENCH_CMD_ID" --instance-id "$INSTANCE_ID" \
+      --query 'StandardErrorContent' --output text 2>/dev/null | tail -5
+    exit 1
+  fi
+  echo "  Launch still running ($STATUS)..."
+done
 
 # Step 4: Poll for completion
 echo "[4/5] Waiting for restore to complete (polling every 30s)..."
@@ -100,7 +113,7 @@ while true; do
     --instance-ids "$INSTANCE_ID" \
     --document-name "AWS-RunShellScript" \
     --timeout-seconds 30 \
-    --parameters '{"commands":["grep \"Finished loading collections from disk\" /tmp/typesense-bench/typesense.log 2>/dev/null && echo RESTORE_DONE || echo STILL_LOADING","cat /tmp/typesense-bench/start-ts.txt 2>/dev/null || echo 0","date +%s","head -1 /tmp/typesense-bench/typesense.log 2>/dev/null | grep -oP \"\\d{8} \\d{2}:\\d{2}:\\d{2}\" || echo none","grep \"Finished loading collections from disk\" /tmp/typesense-bench/typesense.log 2>/dev/null | grep -oP \"\\d{8} \\d{2}:\\d{2}:\\d{2}\" || echo none"]}' \
+    --parameters '{"commands":["if grep -q \"Finished loading collections from disk\" /tmp/typesense-bench/typesense.log 2>/dev/null; then echo RESTORE_DONE; else echo STILL_LOADING; fi","cat /tmp/typesense-bench/start-ts.txt 2>/dev/null || echo 0","date +%s"]}' \
     --output text --query 'Command.CommandId' 2>/dev/null)
 
   sleep 30
@@ -110,26 +123,17 @@ while true; do
     --query 'StandardOutputContent' --output text 2>/dev/null || echo "")
 
   if echo "$RESULT" | grep -q "RESTORE_DONE"; then
-    # Extract timestamps (prefer epoch from start-ts.txt, fall back to log timestamps)
-    START_TS=$(echo "$RESULT" | sed -n '3p' | tr -d '[:space:]')
-    END_TS=$(echo "$RESULT" | sed -n '4p' | tr -d '[:space:]')
+    # Line 1: RESTORE_DONE, Line 2: start epoch, Line 3: current epoch
+    START_TS=$(echo "$RESULT" | sed -n '2p' | tr -d '[:space:]')
+    END_TS=$(echo "$RESULT" | sed -n '3p' | tr -d '[:space:]')
 
     if [[ -n "$START_TS" && "$START_TS" != "0" && -n "$END_TS" && "$END_TS" =~ ^[0-9]+$ ]]; then
       RESTORE_TIME=$((END_TS - START_TS))
     else
-      # Fallback: extract timestamps from glog lines (format: YYYYMMDD HH:MM:SS)
-      LOG_START=$(echo "$RESULT" | sed -n '5p' | tr -d '[:space:]')
-      LOG_END=$(echo "$RESULT" | sed -n '6p' | tr -d '[:space:]')
-      echo "  [fallback] Using log timestamps: start=$LOG_START end=$LOG_END"
-      if [[ "$LOG_START" != "none" && "$LOG_END" != "none" ]]; then
-        # Convert YYYYMMDD HH:MM:SS to epoch
-        S_EPOCH=$(date -d "${LOG_START:0:4}-${LOG_START:4:2}-${LOG_START:6:2} ${LOG_START:8}" +%s 2>/dev/null || echo 0)
-        E_EPOCH=$(date -d "${LOG_END:0:4}-${LOG_END:4:2}-${LOG_END:6:2} ${LOG_END:8}" +%s 2>/dev/null || echo 0)
-        RESTORE_TIME=$((E_EPOCH - S_EPOCH))
-      else
-        echo "  WARNING: Could not extract timestamps"
-        RESTORE_TIME=0
-      fi
+      echo "  WARNING: Bad timestamps (start=$START_TS, end=$END_TS)"
+      echo "  Full check output:"
+      echo "$RESULT"
+      RESTORE_TIME=0
     fi
     echo "  Restore completed in ${RESTORE_TIME}s"
     break
