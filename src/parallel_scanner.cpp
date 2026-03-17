@@ -87,7 +87,7 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
 
         auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
         current_batch.records.emplace_back(
-            index_record(0, seq_id, document, CREATE, dirty_values));
+            index_record(0, seq_id, std::move(document), CREATE, dirty_values));
         num_valid++;
 
         bool exceeds_mem = ((current_batch.doc_str_size * 7) > (250 * 1014 * 1024));
