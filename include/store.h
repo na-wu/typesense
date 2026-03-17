@@ -91,7 +91,8 @@ public:
 
     bool remove(const std::string& key);
 
-    rocksdb::Iterator* scan(const std::string & prefix, const rocksdb::Slice* iterate_upper_bound);
+    rocksdb::Iterator* scan(const std::string & prefix, const rocksdb::Slice* iterate_upper_bound,
+                            size_t readahead_size = 0);
 
     rocksdb::Iterator* get_iterator();
 

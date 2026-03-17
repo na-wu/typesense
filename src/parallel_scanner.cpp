@@ -46,7 +46,7 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
         + Collection::get_seq_id_key_suffix(range_end);
     rocksdb::Slice upper_bound(end_key);
 
-    rocksdb::Iterator* iter = store_->scan(start_key, &upper_bound);
+    rocksdb::Iterator* iter = store_->scan(start_key, &upper_bound, 2 * 1024 * 1024);
     std::unique_ptr<rocksdb::Iterator> iter_guard(iter);
 
     ScannedBatch current_batch;
