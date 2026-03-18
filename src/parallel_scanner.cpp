@@ -2,14 +2,12 @@
 #include "tsconfig.h"
 #include "logger.h"
 #include "fast_json_parse.h"
-#include "index.h"
 
 ParallelScanner::ParallelScanner(Store* store, Collection* collection,
                                  uint32_t max_seq_id, uint32_t num_threads,
-                                 uint32_t batch_size, bool pre_tokenize)
+                                 uint32_t batch_size)
     : store_(store), collection_(collection), max_seq_id_(max_seq_id),
-      num_threads_(num_threads), batch_size_(batch_size),
-      pre_tokenize_(pre_tokenize) {}
+      num_threads_(num_threads), batch_size_(batch_size) {}
 
 ParallelScanner::~ParallelScanner() {
     quit_ = true;
@@ -39,11 +37,6 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
     const std::string seq_id_prefix = collection_->get_seq_id_collection_prefix();
     const bool use_simdjson = Config::get_instance().get_enable_simdjson_restore();
     simdjson::ondemand::parser simdjson_parser;  // per-thread parser (simdjson recommends reuse)
-
-    // Cache schema data for pre-tokenization (read once, reuse for all records)
-    const auto& search_schema = collection_->get_search_schema();
-    const auto token_separators = collection_->get_token_separators();
-    const auto symbols_to_index = collection_->get_symbols_to_index();
 
     // Build RocksDB key for range_start
     std::string start_key = seq_id_prefix + "_"
@@ -95,14 +88,6 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
         auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
         current_batch.records.emplace_back(
             index_record(0, seq_id, std::move(document), CREATE, dirty_values));
-
-        // Pre-tokenize in scanner thread to overlap with indexing on consumer
-        if(pre_tokenize_) {
-            Index::compute_token_offsets_facets(
-                current_batch.records.back(), search_schema,
-                token_separators, symbols_to_index);
-        }
-
         num_valid++;
 
         bool exceeds_mem = ((current_batch.doc_str_size * 7) > (250 * 1014 * 1024));

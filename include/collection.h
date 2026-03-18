@@ -1118,8 +1118,6 @@ public:
 
     std::vector<char> get_token_separators();
 
-    const tsl::htrie_map<char, field>& get_search_schema() const { return search_schema; }
-
     std::string get_fallback_field_type();
 
     bool get_enable_nested_fields();
