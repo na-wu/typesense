@@ -274,6 +274,11 @@ void Config::load_config_env() {
 
     this->skip_writes = ("TRUE" == get_env("TYPESENSE_SKIP_WRITES"));
     this->enable_lazy_filter = ("TRUE" == get_env("TYPESENSE_ENABLE_LAZY_FILTER"));
+
+    if(!get_env("TYPESENSE_ENABLE_SIMDJSON_RESTORE").empty()) {
+        this->enable_simdjson_restore = ("TRUE" == get_env("TYPESENSE_ENABLE_SIMDJSON_RESTORE"));
+    }
+
     this->reset_peers_on_error = ("TRUE" == get_env("TYPESENSE_RESET_PEERS_ON_ERROR"));
 
     if(!get_env("TYPESENSE_MAX_PER_PAGE").empty()) {
@@ -330,6 +335,10 @@ void Config::load_config_env() {
 
     if(!get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS").empty()) {
         this->shutdown_delay_seconds = std::stoi(get_env("TYPESENSE_SHUTDOWN_DELAY_SECONDS"));
+    }
+
+    if(!get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS").empty()) {
+        this->parallel_restore_scan_threads = std::stoi(get_env("TYPESENSE_PARALLEL_RESTORE_SCAN_THREADS"));
     }
 }
 
@@ -533,6 +542,11 @@ void Config::load_config_file(cmdline::parser& options) {
         this->enable_lazy_filter = (enable_lazy_filter_str == "true");
     }
 
+    if(reader.Exists("server", "enable-simdjson-restore")) {
+        auto enable_simdjson_restore_str = reader.Get("server", "enable-simdjson-restore", "true");
+        this->enable_simdjson_restore = (enable_simdjson_restore_str == "true");
+    }
+
     if(reader.Exists("server", "skip-writes")) {
         auto skip_writes_str = reader.Get("server", "skip-writes", "false");
         this->skip_writes = (skip_writes_str == "true");
@@ -590,6 +604,10 @@ void Config::load_config_file(cmdline::parser& options) {
 
     if(reader.Exists("server", "shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = reader.GetInteger("server", "shutdown-delay-seconds", 0);
+    }
+
+    if(reader.Exists("server", "parallel-restore-scan-threads")) {
+        this->parallel_restore_scan_threads = reader.GetInteger("server", "parallel-restore-scan-threads", 1);
     }
 }
 
@@ -772,6 +790,10 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
         this->enable_lazy_filter = options.get<bool>("enable-lazy-filter");
     }
 
+    if(options.exist("enable-simdjson-restore")) {
+        this->enable_simdjson_restore = options.get<bool>("enable-simdjson-restore");
+    }
+
     if(options.exist("enable-search-logging")) {
         this->enable_search_logging = options.get<bool>("enable-search-logging");
     }
@@ -822,6 +844,10 @@ void Config::load_config_cmd_args(cmdline::parser& options)  {
 
     if(options.exist("shutdown-delay-seconds")) {
         this->shutdown_delay_seconds = options.get<uint32_t>("shutdown-delay-seconds");
+    }
+
+    if(options.exist("parallel-restore-scan-threads")) {
+        this->parallel_restore_scan_threads = options.get<uint32_t>("parallel-restore-scan-threads");
     }
 }
 

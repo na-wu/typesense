@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <thread>
 #include <memory>
 #include <atomic>
@@ -905,6 +906,9 @@ public:
 
     static uint32_t get_seq_id_from_key(const std::string & key);
 
+    // Static helper to build the 4-byte big-endian seq_id suffix
+    static std::string get_seq_id_key_suffix(uint32_t seq_id);
+
     Option<bool> get_document_from_store(const std::string & seq_id_key, nlohmann::json & document, bool raw_doc = false) const;
 
     Option<bool> get_document_from_store(const uint32_t& seq_id, nlohmann::json & document, bool raw_doc = false) const;
@@ -959,7 +963,9 @@ public:
     nlohmann::json get_summary_json() const;
 
     size_t batch_index_in_memory(std::vector<index_record>& index_records, const size_t remote_embedding_batch_size,
-                                 const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries, const bool generate_embeddings);
+                                 const size_t remote_embedding_timeout_ms, const size_t remote_embedding_num_tries,
+                                 const bool generate_embeddings,
+                                 const std::unordered_set<std::string>* pre_found_fields = nullptr);
 
     Option<nlohmann::json> add(const std::string & json_str,
                                const index_operation_t& operation=CREATE, const std::string& id="",

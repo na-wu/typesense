@@ -6,6 +6,7 @@
 #include "collection_manager.h"
 #include "analytics_manager.h"
 #include "batched_indexer.h"
+#include "parallel_scanner.h"
 #include "logger.h"
 #include "magic_enum.hpp"
 #include "stopwords_manager.h"
@@ -2097,88 +2098,134 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
     }
 
     // Fetch records from the store and re-create memory index
-    const std::string seq_id_prefix = collection->get_seq_id_collection_prefix();
-    std::string upper_bound_key = collection->get_seq_id_collection_prefix() + "`";  // cannot inline this
-    rocksdb::Slice upper_bound(upper_bound_key);
-
-    rocksdb::Iterator* iter = cm.store->scan(seq_id_prefix, &upper_bound);
-    std::unique_ptr<rocksdb::Iterator> iter_guard(iter);
-
-    std::vector<index_record> index_records;
+    const uint32_t parallel_scan_threads =
+        Config::get_instance().get_parallel_restore_scan_threads();
 
     size_t num_found_docs = 0;
-    size_t num_valid_docs = 0;
     size_t num_indexed_docs = 0;
-    size_t batch_doc_str_size = 0;
 
-    auto begin = std::chrono::high_resolution_clock::now();
+    if(parallel_scan_threads > 1) {
+        // PARALLEL PATH: use multiple scanner threads to read from RocksDB
+        uint32_t max_seq_id = collection_next_seq_id;
+        ParallelScanner scanner(cm.store, collection, max_seq_id,
+                               parallel_scan_threads, batch_size);
+        scanner.start();
 
-    while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
-        num_found_docs++;
-        const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
-
-        nlohmann::json document;
-        const std::string& doc_string = iter->value().ToString();
-
-        try {
-            document = nlohmann::json::parse(doc_string);
-        } catch(const std::exception& e) {
-            LOG(ERROR) << "JSON error: " << e.what();
-            return Option<bool>(400, "Bad JSON.");
+        // Pre-populate found_fields from schema to skip per-doc field scanning
+        // During restore, all docs have the same schema fields
+        std::unordered_set<std::string> restore_found_fields;
+        restore_found_fields.insert("id");
+        for(const auto& f : collection->get_fields()) {
+            restore_found_fields.insert(f.name);
         }
 
-        batch_doc_str_size += doc_string.size();
+        ScannedBatch batch;
 
-        if(collection->get_enable_nested_fields()) {
-            std::vector<field> flattened_fields;
-            field::flatten_doc(document, collection->get_nested_fields(), {}, false, flattened_fields);
-        }
-
-        auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
-
-        num_valid_docs++;
-
-        index_records.emplace_back(index_record(0, seq_id, document, CREATE, dirty_values));
-
-        // Peek and check for last record right here so that we handle batched indexing correctly
-        // Without doing this, the "last batch" would have to be indexed outside the loop.
-        iter->Next();
-        bool last_record = !(iter->Valid() && iter->key().starts_with(seq_id_prefix));
-
-        // if expected memory usage exceeds 250M, we index the accumulated set without caring about batch size
-        bool exceeds_batch_mem_threshold = ((batch_doc_str_size * 7) > (250 * 1014 * 1024));
-
-        // batch must match atleast the number of shards
-         if(exceeds_batch_mem_threshold || (num_valid_docs % batch_size == 0) || last_record) {
-            size_t num_records = index_records.size();
-            size_t num_indexed = collection->batch_index_in_memory(index_records, 200, 60000, 2, false);
-            batch_doc_str_size = 0;
+        while(scanner.next_batch(batch)) {
+            size_t num_records = batch.records.size();
+            size_t num_indexed = collection->batch_index_in_memory(
+                batch.records, 200, 60000, 2, false, &restore_found_fields);
 
             if(num_indexed != num_records) {
-                const std::string& index_error = get_first_index_error(index_records);
+                const std::string& index_error = get_first_index_error(batch.records);
                 if(!index_error.empty()) {
                     // for now, we will just ignore errors during loading of collection
-                    //return Option<bool>(400, index_error);
+                    //LOG(ERROR) << "Error indexing: " << index_error;
                 }
             }
-
-            index_records.clear();
             num_indexed_docs += num_indexed;
         }
 
-        if(num_found_docs % ((1 << 14)) == 0) {
-            // having a cheaper higher layer check to prevent checking clock too often
-            auto time_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::high_resolution_clock::now() - begin).count();
+        num_found_docs = scanner.total_scanned() + scanner.total_errors();
 
-            if(time_elapsed > 30) {
-                begin = std::chrono::high_resolution_clock::now();
-                LOG(INFO) << "Loaded " << num_found_docs << " documents from " << collection->get_name() << " so far.";
+        LOG(INFO) << "Indexed " << num_indexed_docs << " documents for "
+                  << collection->get_name()
+                  << " (scanned: " << scanner.total_scanned()
+                  << ", errors: " << scanner.total_errors() << ")";
+
+    } else {
+        // SEQUENTIAL PATH (existing code, unchanged)
+        const std::string seq_id_prefix = collection->get_seq_id_collection_prefix();
+        std::string upper_bound_key = collection->get_seq_id_collection_prefix() + "`";  // cannot inline this
+        rocksdb::Slice upper_bound(upper_bound_key);
+
+        rocksdb::Iterator* iter = cm.store->scan(seq_id_prefix, &upper_bound);
+        std::unique_ptr<rocksdb::Iterator> iter_guard(iter);
+
+        std::vector<index_record> index_records;
+
+        size_t num_valid_docs = 0;
+        size_t batch_doc_str_size = 0;
+
+        auto begin = std::chrono::high_resolution_clock::now();
+
+        while(iter->Valid() && iter->key().starts_with(seq_id_prefix)) {
+            num_found_docs++;
+            const uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+
+            nlohmann::json document;
+            const std::string& doc_string = iter->value().ToString();
+
+            try {
+                document = nlohmann::json::parse(doc_string);
+            } catch(const std::exception& e) {
+                LOG(ERROR) << "JSON error: " << e.what();
+                return Option<bool>(400, "Bad JSON.");
             }
-        }
 
-        if(quit) {
-            break;
+            batch_doc_str_size += doc_string.size();
+
+            if(collection->get_enable_nested_fields()) {
+                std::vector<field> flattened_fields;
+                field::flatten_doc(document, collection->get_nested_fields(), {}, false, flattened_fields);
+            }
+
+            auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
+
+            num_valid_docs++;
+
+            index_records.emplace_back(index_record(0, seq_id, document, CREATE, dirty_values));
+
+            // Peek and check for last record right here so that we handle batched indexing correctly
+            // Without doing this, the "last batch" would have to be indexed outside the loop.
+            iter->Next();
+            bool last_record = !(iter->Valid() && iter->key().starts_with(seq_id_prefix));
+
+            // if expected memory usage exceeds 250M, we index the accumulated set without caring about batch size
+            bool exceeds_batch_mem_threshold = ((batch_doc_str_size * 7) > (250 * 1014 * 1024));
+
+            // batch must match atleast the number of shards
+             if(exceeds_batch_mem_threshold || (num_valid_docs % batch_size == 0) || last_record) {
+                size_t num_records = index_records.size();
+                size_t num_indexed = collection->batch_index_in_memory(index_records, 200, 60000, 2, false);
+                batch_doc_str_size = 0;
+
+                if(num_indexed != num_records) {
+                    const std::string& index_error = get_first_index_error(index_records);
+                    if(!index_error.empty()) {
+                        // for now, we will just ignore errors during loading of collection
+                        //return Option<bool>(400, index_error);
+                    }
+                }
+
+                index_records.clear();
+                num_indexed_docs += num_indexed;
+            }
+
+            if(num_found_docs % ((1 << 14)) == 0) {
+                // having a cheaper higher layer check to prevent checking clock too often
+                auto time_elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::high_resolution_clock::now() - begin).count();
+
+                if(time_elapsed > 30) {
+                    begin = std::chrono::high_resolution_clock::now();
+                    LOG(INFO) << "Loaded " << num_found_docs << " documents from " << collection->get_name() << " so far.";
+                }
+            }
+
+            if(quit) {
+                break;
+            }
         }
     }
 
