@@ -2106,12 +2106,20 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
                                parallel_scan_threads, batch_size);
         scanner.start();
 
+        // Pre-populate found_fields from schema to skip per-doc field scanning
+        // During restore, all docs have the same schema fields
+        std::unordered_set<std::string> restore_found_fields;
+        restore_found_fields.insert("id");
+        for(const auto& f : collection->get_fields()) {
+            restore_found_fields.insert(f.name);
+        }
+
         ScannedBatch batch;
 
         while(scanner.next_batch(batch)) {
             size_t num_records = batch.records.size();
             size_t num_indexed = collection->batch_index_in_memory(
-                batch.records, 200, 60000, 2, false);
+                batch.records, 200, 60000, 2, false, &restore_found_fields);
 
             if(num_indexed != num_records) {
                 const std::string& index_error = get_first_index_error(batch.records);

@@ -311,6 +311,14 @@ struct index_record {
 
     }
 
+    // Move constructor: avoids deep-copying nlohmann::json when caller is done with the document
+    index_record(size_t record_pos, uint32_t seq_id, nlohmann::json&& doc, index_operation_t operation,
+                 const DIRTY_VALUES& dirty_values):
+            position(record_pos), seq_id(seq_id), doc(std::move(doc)), operation(operation), is_update(false),
+            indexed(false), dirty_values(dirty_values) {
+
+    }
+
     index_record(index_record&& rhs) = default;
 
     index_record& operator=(index_record&& mE) = default;

@@ -46,27 +46,32 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
         + Collection::get_seq_id_key_suffix(range_end);
     rocksdb::Slice upper_bound(end_key);
 
-    rocksdb::Iterator* iter = store_->scan(start_key, &upper_bound);
+    rocksdb::Iterator* iter = store_->scan(start_key, &upper_bound, 2 * 1024 * 1024);
     std::unique_ptr<rocksdb::Iterator> iter_guard(iter);
 
     ScannedBatch current_batch;
     size_t num_valid = 0;
 
     while(iter->Valid() && iter->key().starts_with(seq_id_prefix) && !quit_) {
-        // Parse seq_id from key
-        uint32_t seq_id = Collection::get_seq_id_from_key(iter->key().ToString());
+        // Extract seq_id directly from key Slice (last 4 bytes, big-endian)
+        // Avoids ToString() + substr() + by-value string copies
+        rocksdb::Slice key_slice = iter->key();
+        const char* kd = key_slice.data() + key_slice.size() - 4;
+        uint32_t seq_id = ((uint8_t)kd[0] << 24) | ((uint8_t)kd[1] << 16) |
+                          ((uint8_t)kd[2] << 8)  | (uint8_t)kd[3];
         if(seq_id >= range_end) break;
 
-        const std::string doc_string = iter->value().ToString();
-        current_batch.doc_str_size += doc_string.size();
+        // Read value directly from Slice, avoiding intermediate std::string copy
+        rocksdb::Slice val_slice = iter->value();
+        current_batch.doc_str_size += val_slice.size();
 
         nlohmann::json document;
         try {
             if(use_simdjson) {
-                simdjson::padded_string padded(doc_string);
+                simdjson::padded_string padded(val_slice.data(), val_slice.size());
                 document = FastJsonParser::parse(simdjson_parser, padded);
             } else {
-                document = nlohmann::json::parse(doc_string);
+                document = nlohmann::json::parse(val_slice.data(), val_slice.data() + val_slice.size());
             }
         } catch(const std::exception& e) {
             total_parse_errors++;
@@ -82,7 +87,7 @@ void ParallelScanner::scanner_thread(uint32_t range_start, uint32_t range_end) {
 
         auto dirty_values = DIRTY_VALUES::COERCE_OR_DROP;
         current_batch.records.emplace_back(
-            index_record(0, seq_id, document, CREATE, dirty_values));
+            index_record(0, seq_id, std::move(document), CREATE, dirty_values));
         num_valid++;
 
         bool exceeds_mem = ((current_batch.doc_str_size * 7) > (250 * 1014 * 1024));

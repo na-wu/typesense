@@ -118,11 +118,19 @@ bool Store::remove(const std::string& key) {
     return status.ok();
 }
 
-rocksdb::Iterator* Store::scan(const std::string & prefix, const rocksdb::Slice* iterate_upper_bound) {
+rocksdb::Iterator* Store::scan(const std::string & prefix, const rocksdb::Slice* iterate_upper_bound,
+                               size_t readahead_size) {
     std::shared_lock lock(mutex);
     rocksdb::ReadOptions read_opts;
     if(iterate_upper_bound) {
         read_opts.iterate_upper_bound = iterate_upper_bound;
+    }
+    if(readahead_size > 0) {
+        read_opts.readahead_size = readahead_size;
+        // Sequential scan: don't pollute block cache with data read exactly once
+        read_opts.fill_cache = false;
+        // Data was validated on write; skip checksum verification during restore scan
+        read_opts.verify_checksums = false;
     }
     rocksdb::Iterator *iter = db->NewIterator(read_opts);
     iter->Seek(prefix);

@@ -654,6 +654,8 @@ size_t Index::batch_memory_index(Index *index,
     // local is need to propogate the thread local inside threads launched below
     auto local_write_log_index = write_log_index;
     
+    const bool fields_pre_populated = !found_fields.empty();
+
     for(size_t i = 0; i < iter_batch.size(); i++) {
         auto& index_rec = iter_batch[i];
 
@@ -668,8 +670,10 @@ size_t Index::batch_memory_index(Index *index,
             num_indexed++;
         }
 
-        for(const auto& kv: index_rec.doc.items()) {
-            found_fields.insert(kv.key());
+        if(!fields_pre_populated) {
+            for(const auto& kv: index_rec.doc.items()) {
+                found_fields.insert(kv.key());
+            }
         }
     }
 

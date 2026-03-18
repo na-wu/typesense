@@ -1,0 +1,21 @@
+commit	restore_time	peak_rss_gb	status	description
+2801543	2239	94.0	keep	baseline: opt3+opt6+opt5-12 (simdjson + 4 scan threads + 12 indexing threads)
+2801543	2247	94.0	discard	6 scan threads (flag-only: --parallel-restore-scan-threads=6)
+602ce0a	2220	90.3	discard	eliminate string copies in scanner (Slice→padded_string, inline seq_id extraction)
+ab29cc7	2194	94.0	keep	combined: string copy elimination + move semantics for index_record
+5c1ea62	2206	90.2	discard	skip validation during restore (do_validation=false)
+bf221cc	2214	90.1	discard	readahead 4MB (was 2MB)
+9879ed5	2145	90.2	keep	skip per-doc field scanning in batch_memory_index (pre-populate found_fields)
+9879ed5	2171	90.2	discard	max-indexing-concurrency=16 (flag-only, was 12)
+d155787	2179	90.3	discard	queue depth 16 (was 8)
+a77a34f	2273	90.0	discard	jemalloc MALLOC_CONF=background_thread:true,dirty/muzzy_decay_ms=0 (WORSE)
+a141c8d	2194	90.5	discard	batch size 20000 (flag-only: --num-documents-parallel-load=20000)
+7364484	2162	90.2	discard	batch seq_id upserts under single lock
+e294deb	2547	89.9	discard	num-collections-parallel-load=1 (MUCH WORSE)
+2cb5d0e	2183	94.0	discard	8 scan + 8 indexing threads (flag-only)
+1f34de1	2193	90.4	discard	pre-tokenize in scanner threads (slower: 4 threads vs 12)
+a51e058	2202	90.1	discard	batch size 5000 (flag-only: --num-documents-parallel-load=5000)
+09e864d	2165	90.2	discard	num-collections-parallel-load=3 (flag-only)
+7937322	2134	90.2	keep	fill_cache=false for sequential restore scans (run 1)
+7937322	2142	90.2	keep	fill_cache=false validation run (avg 2138, marginal but correct)
+3bf17e1	2128	90.2	keep	+ verify_checksums=false for restore scans
