@@ -12,3 +12,4 @@ a77a34f	2273	90.0	discard	jemalloc MALLOC_CONF=background_thread:true,dirty/muzz
 a141c8d	2194	90.5	discard	batch size 20000 (flag-only: --num-documents-parallel-load=20000)
 7364484	2162	90.2	discard	batch seq_id upserts under single lock
 e294deb	2547	89.9	discard	num-collections-parallel-load=1 (MUCH WORSE)
+2cb5d0e	2183	94.0	discard	8 scan + 8 indexing threads (flag-only)
