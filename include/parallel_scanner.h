@@ -18,7 +18,7 @@ class ParallelScanner {
 public:
     ParallelScanner(Store* store, Collection* collection,
                     uint32_t max_seq_id, uint32_t num_threads,
-                    uint32_t batch_size);
+                    uint32_t batch_size, bool pre_tokenize = false);
 
     ~ParallelScanner();
 
@@ -43,6 +43,7 @@ private:
     uint32_t max_seq_id_;
     uint32_t num_threads_;
     uint32_t batch_size_;
+    bool pre_tokenize_;
 
     // Thread-safe bounded batch queue
     std::queue<ScannedBatch> batch_queue_;

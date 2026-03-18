@@ -2103,7 +2103,7 @@ Option<bool> CollectionManager::load_collection(const nlohmann::json &collection
         // PARALLEL PATH: use multiple scanner threads to read from RocksDB
         uint32_t max_seq_id = collection_next_seq_id;
         ParallelScanner scanner(cm.store, collection, max_seq_id,
-                               parallel_scan_threads, batch_size);
+                               parallel_scan_threads, batch_size, true /* pre_tokenize */);
         scanner.start();
 
         // Pre-populate found_fields from schema to skip per-doc field scanning
