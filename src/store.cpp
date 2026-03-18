@@ -127,6 +127,8 @@ rocksdb::Iterator* Store::scan(const std::string & prefix, const rocksdb::Slice*
     }
     if(readahead_size > 0) {
         read_opts.readahead_size = readahead_size;
+        // Sequential scan: don't pollute block cache with data read exactly once
+        read_opts.fill_cache = false;
     }
     rocksdb::Iterator *iter = db->NewIterator(read_opts);
     iter->Seek(prefix);
